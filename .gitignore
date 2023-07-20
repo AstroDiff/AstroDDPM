@@ -2,6 +2,6 @@
 .python-version
 __pycache__
 
-logs_output
-
-dev
+*log
+venv
+*.egg-info
