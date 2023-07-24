@@ -48,11 +48,11 @@ def make_te(dim_in, dim_out):
 
 ## TODO make that clearer and smarter
 def normalization_parameters(normalisation, length):
-    if normalisation == "LN" or normalisation == "default":
+    if normalisation == "LN":
         return (length * ["LN"], length * ["LN"], "LN")
     if normalisation == "BN":
         return length * ["BN"], (length - 1) * ["BN"], "BN"
-    if normalisation == "GN":
+    if normalisation == "GN" or normalisation == "default":
         return length * ["GN"], (length - 1) * ["GN"], "GN"
     if normalisation == "None":
         return length * [None], (length - 1) * [None], None
@@ -155,6 +155,8 @@ class ResUNet(nn.Module):
         norm_down, norm_up, norm_tail = normalization_parameters(
             normalisation, len(sizes) * num_blocks
         )
+        self.config = { "in_c": in_c, "out_c": out_c, "first_c": first_c, "sizes": sizes, "num_blocks": num_blocks, "n_steps": n_steps, "time_emb_dim": time_emb_dim,
+        "dropout": dropout, "attention": attention, "normalisation": normalisation, "padding_mode": padding_mode, "eps_norm": eps_norm, "skiprescale": skiprescale, "type" : "ResUNet", }
 
         self.normalisation = normalisation
 
@@ -284,3 +286,41 @@ class ResUNet(nn.Module):
                 h = block(h)
         h = self.tail(h)
         return h
+
+def get_network(config): ## TODO add more networks, TODO be careful when I will change how ResUNet works!!!
+    if "type" not in config.keys():
+        config["type"] = "ResUNet"
+    if config["type"].lower() == "resunet":
+        if "in_c" not in config.keys():
+            config["in_c"] = 1
+        if "out_c" not in config.keys():
+            config["out_c"] = 1
+        if "first_c" not in config.keys():
+            config["first_c"] = 10
+        if "sizes" not in config.keys():
+            config["sizes"] = [256, 128, 64, 32]
+        if "num_blocks" not in config.keys():
+            config["num_blocks"] = 1
+        if "n_steps" not in config.keys():
+            print("Warning: n_steps not specified, defaulting")
+            config["n_steps"] = 1000
+        if "time_emb_dim" not in config.keys():
+            config["time_emb_dim"] = 100
+        if "dropout" not in config.keys():
+            print("Warning: dropout not specified, defaulting")
+            config["dropout"] = 0
+        if "attention" not in config.keys():
+            print("Warning: attention not specified, defaulting")
+            config["attention"] = []
+        if "normalisation" not in config.keys():
+            print("Warning: normalisation not specified, defaulting")
+            config["normalisation"] = "default"
+        if "padding_mode" not in config.keys():
+            config["padding_mode"] = "circular"
+        if "eps_norm" not in config.keys():
+            config["eps_norm"] = 1e-5
+        if "skiprescale" not in config.keys():
+            config["skiprescale"] = False
+        return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"],)
+    else:
+        raise NotImplementedError(f"Network type {config['type']} not implemented")

@@ -3,6 +3,8 @@ import abc
 from typing import Any
 import torch
 import numpy as np
+import os
+import warnings
 
 ######################
 ## TODO put a disclaimer that it is Yang Song's code
@@ -66,6 +68,8 @@ class DiscreteVPSDE(DiscreteSDE):
         self.Beta = (beta_min * self.t + (beta_max - beta_min) * self.t**2) ## Primitive of beta(t) then discretized
 
         self.ddpm_math = ddpm_math
+
+        self.config = {'type' : 'DiscreteVPSDE', 'beta_min':self.beta_min, 'beta_max':self.beta_max, 'ddpm_math':self.ddpm_math, 'N':self.N}
 
     def foward(self, x_t, t):
         ## Returns the drift and brownian term of the Discretized SDE
@@ -137,19 +141,26 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         self.ddpm_math = ddpm_math
 
         if type(power_spectrum)==str:
+            self.power_spectrum_name = power_spectrum
             try:
-                pass
+                folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),'power_spectra')
+                self.power_spectrum = torch.from_numpy(np.load(os.path.join(folder, power_spectrum + '.npy'))).to(device).type(torch.float32)
             except:
                 raise ValueError('Power spectrum not recognized')
         elif type(power_spectrum)==np.ndarray:
             self.power_spectrum = torch.from_numpy(power_spectrum).to(device).type(torch.float32)
+            self.power_spectrum_name = 'custom'
         elif type(power_spectrum)==torch.Tensor:
             self.power_spectrum = power_spectrum.to(device)
+            self.power_spectrum_name = 'custom'
         else:
             raise ValueError('''Argument power_spectrum must be one of:
              - a string -> a common power spectrum stored in the library see add_power_spectrum NOT IMPLEMENTED
              - a numpy array or a torch tensor -> the power spectrum itself (cross spectrum not implemented)''')
         self.sqrt_ps = torch.sqrt(self.power_spectrum)
+
+        self.config = {'type' : 'DiscreteSigmaVPSDE', 'power_spectrum_name':self.power_spectrum_name, 'beta_min':self.beta_min, 'beta_max':self.beta_max, 'ddpm_math':self.ddpm_math, 'N':self.N}
+
     def foward(self, x_t, t):
         ## Returns the drift and brownian term of the Discretized SDE
         if not self.ddpm_math:
@@ -200,3 +211,34 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         return 0.0
     
 
+def get_sde(config):
+    """Returns an SDE object from a config dictionary."""
+    sto_diff_eq = None
+    if "type" not in config.keys():
+        config["type"] = "DiscreteVPSDE"
+    if config["type"].lower() == "discretevpsde":
+        if "beta_min" not in config.keys():
+            config["beta_min"] = 0.1
+        if "beta_max" not in config.keys():
+            config["beta_max"] = 20
+        if "N" not in config.keys():
+            config["N"] = 1000
+        if "ddpm_math" not in config.keys():
+            config["ddpm_math"] = True
+        sto_diff_eq = DiscreteVPSDE(beta_min=config["beta_min"], beta_max=config["beta_max"], N=config["N"], ddpm_math=config["ddpm_math"])
+    elif config["type"].lower() == "discretesigmavpsde":
+        if "beta_min" not in config.keys():
+            config["beta_min"] = 0.1
+        if "beta_max" not in config.keys():
+            config["beta_max"] = 20
+        if "N" not in config.keys():
+            config["N"] = 1000
+        if "ddpm_math" not in config.keys():
+            config["ddpm_math"] = True
+        if "power_spectrum_name" not in config.keys():
+            config["power_spectrum_name"] = "cmb_256_8arcmippixel"
+        sto_diff_eq = DiscreteSigmaVPSDE(beta_min=config["beta_min"], beta_max=config["beta_max"], N=config["N"], ddpm_math=config["ddpm_math"], power_spectrum=config["power_spectrum_name"])
+    if sto_diff_eq is None:
+        warnings.warn("There was a problem with the SDE config, using default DiscreteVPSDE")
+        sto_diff_eq = DiscreteVPSDE()
+    return sto_diff_eq
