@@ -159,7 +159,18 @@ class ResUNet(nn.Module):
         "dropout": dropout, "attention": attention, "normalisation": normalisation, "padding_mode": padding_mode, "eps_norm": eps_norm, "skiprescale": skiprescale, "type" : "ResUNet", }
 
         self.normalisation = normalisation
-
+        self.in_c = in_c
+        self.out_c = out_c
+        self.first_c = first_c
+        self.sizes = sizes
+        self.num_blocks = num_blocks
+        self.n_steps = n_steps
+        self.time_emb_dim = time_emb_dim
+        self.dropout = dropout
+        self.attention = attention
+        self.padding_mode = padding_mode
+        self.eps_norm = eps_norm
+        
         # Sinusoidal embedding
 
         self.time_embed = nn.Embedding(n_steps, time_emb_dim)
@@ -320,7 +331,7 @@ def get_network(config): ## TODO add more networks, TODO be careful when I will 
         if "eps_norm" not in config.keys():
             config["eps_norm"] = 1e-5
         if "skiprescale" not in config.keys():
-            config["skiprescale"] = False
+            config["skiprescale"] = True
         return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"],)
     else:
         raise NotImplementedError(f"Network type {config['type']} not implemented")

@@ -36,7 +36,6 @@
             "train_batch_size": 64,
             "test_batch_size": 128,
             "num_workers": 8,
-            "pin_memory": true,
             "seed": 33,
             "split": 0.1,
             "dataset": {
@@ -57,8 +56,7 @@
             "type": "invpower",
             "warmup": 100,
             "maxlr": 0.001,
-            "power": 0.2,
-            "last_step": -1
+            "power": 0.2
         },
         "use_gpu": true,
         "logging": true,

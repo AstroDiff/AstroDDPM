@@ -42,8 +42,11 @@ class DiscreteSBM(DiffusionModel):
     def step(self, model_output, timestep, sample):
         drift, brownian = self.sde.reverse(sample, timestep, model_output)
         return sample + drift + brownian
-    def generate_image(self, sample_size, channel, size, sample=None, initial_timestep=None):
+    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True):
         self.eval()
+
+        channel, size = self.network.in_c, self.network.sizes[0]
+        
         if initial_timestep is None:
             tot_steps = self.sde.N
         else:
@@ -52,7 +55,7 @@ class DiscreteSBM(DiffusionModel):
             timesteps = list(range(tot_steps))[::-1]
             if sample is None:
                 sample = self.sde.prior_sampling((sample_size, channel, size, size))
-            progress_bar = tqdm.tqdm(total=tot_steps)
+            progress_bar = tqdm.tqdm(total=tot_steps, disable=not verbose)
             for t in timesteps:
                 time_tensor = (torch.ones(sample_size, 1) * t).long().to(device)
                 residual = self.network(sample, time_tensor)

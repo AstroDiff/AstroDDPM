@@ -1,7 +1,0 @@
---model_id=MHD_DDPM_clean
---num_epochs=5000
---save_step_epoch=200
---sample_step_epoch=200
---network=unet
---normalization=BN
---dropout=0.1

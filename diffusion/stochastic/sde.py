@@ -50,6 +50,18 @@ class DiscreteSDE(abc.ABC):
     @abc.abstractmethod
     def prior_log_likelihood(self, z):
         pass
+    @abc.abstractmethod
+    def rescale_additive_to_preserved(self, x, t):
+        pass
+    @abc.abstractmethod
+    def rescale_preserved_to_additive(self, x, t):
+        pass
+    @abc.abstractmethod
+    def noise_level(self, t):
+        pass
+    @abc.abstractmethod
+    def tweedie_reverse(self, x, t, modified_score):
+        pass
 
 class DiscreteVPSDE(DiscreteSDE):
     def __init__(self, N, beta_min = 0.1, beta_max = 20.0, ddpm_math = True):
@@ -115,12 +127,30 @@ class DiscreteVPSDE(DiscreteSDE):
             drift = (coef_first_t - 1) * x - (coef_first_t*coef_eps_t)*modified_score
             brownian = (self.betas[t] ** 0.5).reshape(-1, 1, 1, 1) * torch.randn_like(x)*(t > 0).reshape(-1, 1, 1, 1)
             return drift, brownian
+    def tweedie_reverse(self, x, t, modified_score):
+        if not self.ddpm_math:
+            raise NotImplementedError("Not yet implemented")
+        else:
+            s1 = self.sqrt_alphas_cumprod[t] # bs
+            s2 = self.sqrt_one_minus_alphas_cumprod[t] # bs
+            s1 = s1.reshape(-1,1,1,1) # (bs, 1, 1, 1) for broadcasting
+            s2 = s2.reshape(-1,1,1,1) # (bs, 1, 1, 1)
+
+            batch_denoised= (x- s2* modified_score)/s1
+            return batch_denoised
 
     def prior_sampling(self, shape):
         return torch.randn(shape).to(device)
     def prior_log_likelihood(self, z):
         raise NotImplementedError
         return 0.0
+    def rescale_additive_to_preserved(self, x, t):
+        return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def rescale_preserved_to_additive(self, x, t):
+        return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def noise_level(self, t):
+        return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
     
 class DiscreteSigmaVPSDE(DiscreteSDE):
     def __init__(self, N, power_spectrum = 'cmb', beta_min = 0.1, beta_max = 20.0, ddpm_math = True):
@@ -204,11 +234,28 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
             drift = (coef_first_t - 1) * x - (coef_first_t*coef_eps_t)*modified_score
             brownian = (self.betas[t] ** 0.5).reshape(-1, 1, 1, 1) * torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real*(t > 0).reshape(-1, 1, 1, 1)
             return drift, brownian
+    def tweedie_reverse(self, x, t, modified_score):
+        if not self.ddpm_math:
+            raise NotImplementedError("Not yet implemented")
+        else:
+            s1 = self.sqrt_alphas_cumprod[t] # bs
+            s2 = self.sqrt_one_minus_alphas_cumprod[t] # bs
+            s1 = s1.reshape(-1,1,1,1) # (bs, 1, 1, 1) for broadcasting
+            s2 = s2.reshape(-1,1,1,1) # (bs, 1, 1, 1)
+
+            batch_denoised= (x- s2* modified_score)/s1
+            return batch_denoised
     def prior_sampling(self, shape):
         return torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn(shape)).to(device)).real
     def prior_log_likelihood(self, z):
         raise NotImplementedError ## TODO
         return 0.0
+    def rescale_additive_to_preserved(self, x, t):
+        return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def rescale_preserved_to_additive(self, x, t):
+        return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def noise_level(self, t):
+        return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
     
 
 def get_sde(config):

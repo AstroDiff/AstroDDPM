@@ -27,7 +27,7 @@
                 "normalisation": "default",
                 "padding_mode": "circular",
                 "eps_norm": 1e-05,
-                "skiprescale": false,
+                "skiprescale": true,
                 "type": "ResUNet"
             },
             "type": "DiscreteSBM"
@@ -53,17 +53,156 @@
             "weight_decay": 0
         },
         "scheduler": {
-            "type": "invpower",
+            "type": "invsqrt",
             "warmup": 100,
-            "maxlr": 0.001,
-            "power": 0.2,
+            "maxlr": 0.002,
             "last_step": -1
         },
-        "ckpt_epoch": 100,
+        "ckpt_epoch": 200,
         "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
-        "for_training": false,
-        "sample_epoch": 100,
+        "sample_epoch": 200,
         "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
-        "sample_size": 64
+        "sample_size": 8,
+        "results_size": 64,
+        "separate_ckpt": false,
+        "epochs": 10000
+    },
+    "DemoDDPM": {
+        "diffusion_model": {
+            "sde": {
+                "type": "DiscreteVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 20.0,
+                "ddpm_math": true,
+                "N": 1000
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet"
+            },
+            "type": "DiscreteSBM"
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_MHD_BPROJ_DENSITY/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_MHD_BPROJ_DENSITY"
+            }
+        },
+        "optimizer": {
+            "type": "Adam",
+            "lr": 0.001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.003,
+            "minlr": 0.0001
+        },
+        "ckpt_epoch": 25,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 25,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "model_id": "DemoDDPM"
+    },
+    "DemoDDPM2": {
+        "diffusion_model": {
+            "sde": {
+                "type": "DiscreteVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 20.0,
+                "ddpm_math": true,
+                "N": 1000
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet"
+            },
+            "type": "DiscreteSBM"
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_MHD_BPROJ_DENSITY/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_MHD_BPROJ_DENSITY"
+            },
+            "name": "CATS_MHD_BPROJ_DENSITY"
+        },
+        "optimizer": {
+            "type": "Adam",
+            "lr": 0.001,
+            "weight_decay": 0
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.003,
+            "minlr": 0.0001,
+            "last_step": -1,
+            "step_period": 100,
+            "power": 0.25,
+            "maxstep": 1000
+        },
+        "ckpt_epoch": 25,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 25,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "model_id": "DemoDDPM2"
     }
 }

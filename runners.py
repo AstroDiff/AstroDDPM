@@ -28,6 +28,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ## transforms (for the dataset) -> or maybe just pass the dataset and dataloader as kwargs or put dataset kwargs as a subdict of config
 ## TODO: add __repr__ to all classes and docstrings to all functions
 ## TODO add likelihood computations? are is it to hands off for the user?
+## TODO add EMA, DDIM, DDRM, PIGDM...
 
 
 ## List of methods and attributes for Diffuser class: train (step, loop, with test losses, ability to see samples ie test and save ckpt as well as resume training)
@@ -42,68 +43,79 @@ class Diffuser(nn.Module):
 
         for key, value in kwargs.items():
             setattr(self, key, value)
-
+        if not hasattr(self, "verbose"):
+            self.verbose = True ## TODO implement!!!
         if hasattr(self, "config"):
-            print("Existing attributes may be overwritten.\n Loading config from {}".format(self.config))
+            if type(self.config) == str:
+                print("Existing attributes may be overwritten: loading config from {}".format(self.config))
+            else:
+                print("Existing attributes may be overwritten: loading config from a dict.")
             self.load(config=self.config)
-        elif hasattr(self, "model_id"):
-            print("Model id was provided at initialization. Attributes provided along it as args may be overwritten. Loading config (and possibly ckpt) corresponding to the model id: {}\n".format(self.model_id))
-            self.load(model_id=self.model_id)
-        elif hasattr(self, "ckpt"):
-            warnings.warn("Initializing with a checkpoint is discouraged to avoid loading a cheackpoint on an incompatible model. Define the model architecture (if not already done) and use the load method instead.")
 
         ## Syncing the config with the attributes
         self.config = self.get_config() 
         
-        if hasattr(self, "diffmodel"):
+        if hasattr(self, "diffmodel"): ## TODO add an option for cpu?
             self.diffmodel = self.diffmodel.to(device)
-
+        ## TODO check that model id are coherent with the config
         ## logging stuff (weight and biases, tensorboard, etc.)
-        ## transforms (for the dataset) -> or maybe just pass the dataset and dataloader as kwargs or put dataset kwargs as a subdict of config
+
     def get_config(self):
         res_config = {}
         if hasattr(self, "diffmodel"):
-            diffmodel_config = self.diffmodel.config
-            res_config["diffusion_model"] = diffmodel_config
+            res_config["diffusion_model"] = self.diffmodel.config
         if hasattr(self, "train_dataloader"):
             try:
-                train_dataloader_config = self.train_dataloader.config
-                res_config["dataloaders"] = train_dataloader_config
+                res_config["dataloaders"] = self.train_dataloader.config
             except:
                 res_config["dataloaders"] = {}
-        if hasattr(self, "model_id"):
-            model_id = self.model_id
-            res_config["model_id"] = model_id
+        
         if hasattr(self, "optimizer"):
-            optimizer_config = self.optimizer.config
-            res_config["optimizer"] = optimizer_config
+            try:
+                res_config["optimizer"] = self.optimizer.config
+            except:
+                res_config["optimizer"] = {}
         if hasattr(self, "scheduler"):
-            scheduler_config = self.scheduler.config
-            res_config["scheduler"] = scheduler_config
+            try:
+                res_config["scheduler"] = self.scheduler.config
+            except:
+                res_config["scheduler"] = {}
         if hasattr(self, "ckpt_epoch"):
-            ckpt_epoch = self.ckpt_epoch
-            res_config["ckpt_epoch"] = ckpt_epoch
+            res_config["ckpt_epoch"] = self.ckpt_epoch
+        if hasattr(self, "separate_ckpt"):
+            res_config["separate_ckpt"] = self.separate_ckpt
         if hasattr(self, "ckpt_dir"):
-            ckpt_dir = self.ckpt_dir
-            res_config["ckpt_dir"] = ckpt_dir
+            res_config["ckpt_dir"] = self.ckpt_dir
         if hasattr(self, "sample_epoch"):
-            sample_epoch = self.sample_epoch
-            res_config["sample_epoch"] = sample_epoch
+            res_config["sample_epoch"] = self.sample_epoch
         if hasattr(self, "sample_dir"):
-            sample_dir = self.sample_dir
-            res_config["sample_dir"] = sample_dir
+            res_config["sample_dir"] = self.sample_dir
         if hasattr(self, "sample_size"):
-            sample_size = self.sample_size
-            res_config["sample_size"] = sample_size
+            res_config["sample_size"] = self.sample_size
+        if hasattr(self, "results_size"):
+            res_config["results_size"] = self.results_size
+        if hasattr(self, "epochs"):
+            res_config["epochs"] = self.epochs
+        if hasattr(self, "model_id"):
+            res_config["model_id"] = self.model_id
+        else:
+            print("No model id found")
         return res_config
         
 
     def set_model_id(self, model_id):
+        ## TODO check conflicts
         if hasattr(self, "model_id"):
             previous_model_id_attribute = self.model_id
+        else:
+            previous_model_id_attribute = None
         if hasattr(self, "config"):
             if "model_id" in self.config.keys():
                 previous_model_id_config = self.config["model_id"]
+            else:
+                previous_model_id_config = None
+        else:
+            previous_model_id_config = None
         self.model_id = model_id
         self.config["model_id"] = model_id
         if previous_model_id_attribute is not None:
@@ -113,7 +125,7 @@ class Diffuser(nn.Module):
             if previous_model_id_config != model_id:
                 print("Model id was changed from {} to {}.".format(previous_model_id_config, self.model_id))
         
-    def set_ckpt_sample(self, ckpt_dir = None, sample_dir = None, ckpt_epoch = None, sample_epoch = None, sample_size = None):
+    def set_ckpt_sample(self, ckpt_dir = None, sample_dir = None, ckpt_epoch = None, sample_epoch = None, sample_size = None, results_size = None, separate_ckpt = False):
         if ckpt_dir is not None:
             self.ckpt_dir = ckpt_dir
             self.config["ckpt_dir"] = ckpt_dir
@@ -121,9 +133,10 @@ class Diffuser(nn.Module):
                 self.ckpt_epoch = ckpt_epoch
                 self.config["ckpt_epoch"] = ckpt_epoch
             else:
-                warnings.warn("No checkpoint step provided, using the default value (1000).")
+                warnings.warn("No checkpoint epoch provided, using the default value (100).")
                 self.ckpt_epoch = 100
                 self.config["ckpt_epoch"] = 100
+            self.separate_ckpt = separate_ckpt
         if sample_dir is not None:
             self.sample_dir = sample_dir
             self.config["sample_dir"] = sample_dir
@@ -131,7 +144,7 @@ class Diffuser(nn.Module):
                 self.sample_epoch = sample_epoch
                 self.config["sample_epoch"] = sample_epoch
             else:
-                warnings.warn("No sample step provided, using the default value (100).")
+                warnings.warn("No sample step epoch, using the default value (100).")
                 self.sample_epoch = 100
                 self.config["sample_epoch"] = 100
             if sample_size is not None:
@@ -141,130 +154,145 @@ class Diffuser(nn.Module):
                 warnings.warn("No sample size provided, using the default value (16).")
                 self.sample_size = 16
                 self.config["sample_size"] = 16
+            if results_size is not None:
+                self.results_size = results_size
+                self.config["results_size"] = results_size
+            else:
+                warnings.warn("No results size provided, using the default value (64).")
+                self.results_size = 64
+                self.config["results_size"] = 64
 
-    def load(self, **kwargs):
+    def load(self, config, for_training = False, also_ckpt = True, new_model_id = None, **kwargs):
         ## Load a model from a checkpoint, or from a MODEL ID, linked to the json with the link to the ckpt, with option to load the optimizer state, etc.
         ## Option to load parameters, name, ID and stuff from a json dict in the config folder (or elsewhere) for ease of reuse
-
-        if "ckpt" in kwargs.keys():
-            print("""            Loading model weights and possibly optimizer state from a checkpoint.
-            This method will not change the model architecture, nor the optimizer, dataset. It can only change the state they were left in.
-            If no model (or the DiffusionModel() dummy model) was provided or the architecture is not a match, this will result in an error. 
-            If this load is part of resuming training (or finetuning), good practices recommend having the optimizer state in the checkpoint.""")
-            if type(kwargs["ckpt"]) == str:
-                self.load_ckpt(ckpt_path=kwargs["ckpt"])
-            elif type(kwargs["ckpt"]) == dict:
-                self.load_ckpt(dict=kwargs["ckpt"])
-            self.load_ckpt()
-        elif "model_id" in kwargs.keys():
-            print("Loading a whole diffuser given a model id. The MODELS.json dict value associated to the id should contain all the config elements. This method will change the model architecture, optimizer, dataset, etc. to match the saved model then load the corresponding states.")
-            with open(
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "config","MODELS.json")
-            ) as f:
-                all_models = json.load(f)
-            if kwargs["model_id"] in all_models.keys():
-                self.config = all_models[kwargs["model_id"]]
-                self.load(config=self.config)
+        ## TODO model id be carful not to overwrite stuff
+        print("Loading the diffuser from a config dict.")
+        def load_dict():
+            if "diffusion_model" in self.config.keys():
+                self.diffmodel = dm.get_diffusion_model(self.config["diffusion_model"]).to(device)
             else:
-                raise ValueError("Model ID not found in MODELS.json")
-        elif "config" in kwargs.keys():
-            print("Loading the diffuser from a config dict or json file.")
-            def load_dict(config_dict):
-                if "diffusion_model" in self.config.keys():
-                    self.diffmodel = dm.get_diffusion_model(self.config["diffusion_model"]).to(device)
-                else:
-                    warnings.warn("No diffusion model found in the config, the model will be initialized with the default parameters.")
-                    self.diffmodel = dm.get_diffusion_model({}).to(device)
-                if "dataloaders" in self.config.keys():
-                    self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader(self.config["dataloaders"])
-                else:
-                    warnings.warn("No dataloaders found in the config, the dataloaders will be initialized with the default parameters.")
-                    self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader({})
-                if "optimizer" in self.config.keys():
-                    self.optimizer, self.scheduler = get_optimizer_and_scheduler(self.config, self.diffmodel.parameters())
-                else:
-                    warnings.warn("No optimizer found in the config, the optimizer will be initialized with the default parameters.")
-                    self.optimizer, self.scheduler = get_optimizer_and_scheduler({}, self.diffmodel.parameters())
-                if "model_id" in self.config.keys():
-                    self.model_id = self.config["model_id"]
-                else:
-                    if hasattr(self, "model_id"):
-                        pass
-                    else:
-                        warnings.warn("No model id found in the config use the set_model_id method.")
-                if "ckpt_dir" in self.config.keys():
-                    self.ckpt_dir = self.config["ckpt_dir"]
-                else:
-                    if hasattr(self, "ckpt_dir"):
-                        pass
-                    else:
-                        warnings.warn("No ckpt dir found in the config use the set_ckpt_sample method.")
-                if "sample_dir" in self.config.keys():
-                    self.sample_dir = self.config["sample_dir"]
-                else:
-                    if hasattr(self, "sample_dir"):
-                        pass
-                    else:
-                        warnings.warn("No sample dir found in the config use the set_ckpt_sample method.")
-                if "ckpt_epoch" in self.config.keys():
-                    self.ckpt_epoch = self.config["ckpt_epoch"]
-                else:
-                    if hasattr(self, "ckpt_epoch"):
-                        pass
-                    else:
-                        warnings.warn("No ckpt step found in the config use the set_ckpt_sample method.")
-                if "sample_epoch" in self.config.keys():
-                    self.sample_epoch = self.config["sample_epoch"]
-                else:
-                    if hasattr(self, "sample_epoch"):
-                        pass
-                    else:
-                        warnings.warn("No sample step found in the config use the set_ckpt_sample method.")
-                if "sample_size" in self.config.keys():
-                    self.sample_size = self.config["sample_size"]
-                else:
-                    if hasattr(self, "sample_size"):
-                        pass
-                    else:
-                        warnings.warn("No sample size found in the config use the set_ckpt_sample method.")
-
-            def find_and_load_ckpt():
-                if "ckpt_dir" in self.config.keys():
-                    ckpt_dir = self.config["ckpt_dir"]
-                else:
-                    print("No ckpt dir path provided, trying to find the ckpt in the default ckpt dir (./ckpt).")
-                    ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ckpt")
-                if "model_id" in self.config.keys():
-                    ckpt_name = self.config["model_id"]
-                else:
-                    print("No model id provided, trying to find the ckpt with the default model id (DefaultDDPM).")
-                    ckpt_name = "DefaultDDPM"
-                if os.path.isfile(os.path.join(ckpt_dir, ckpt_name+'.pt')):
-                    if "for_training" in self.config.keys():
-                        print("Loading the checkpoint for training, as specified in the config.")
-                        self.load_ckpt(path = os.path.join(ckpt_dir, ckpt_name), for_training = self.config["for_training"])
-                    else:
-                        print("Loading the checkpoint without optimizer and training information, as specified in the config.")
-                        self.load_ckpt(path = os.path.join(ckpt_dir, ckpt_name))
-                else:
-                    warnings.warn("No checkpoint found in the ckpt_dir, the model will be initialized with the default torch layer parameters.")
-            if type(kwargs["config"]) == str:
-                with open(kwargs["config"]) as f:
-                    self.config = json.load(f)
-                load_dict(self.config)
-                find_and_load_ckpt()
-
-            elif type(kwargs["config"]) == dict:
-                self.config = kwargs["config"]
-                load_dict(self.config)
-                find_and_load_ckpt()
-
-                ## Try and find a checkpoint to load the weights from there, otherwise say it + warn the user that if he want's to finetune, he should change the model id. if he wants to resume training, he doesn"t have to
+                warnings.warn("No diffusion model found in the config, the model will be initialized with the default parameters.")
+                self.diffmodel = dm.get_diffusion_model({}).to(device)
+            if "dataloaders" in self.config.keys():
+                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader(self.config["dataloaders"])
             else:
-                raise ValueError("Config should be a dict or a path to a json file.")
+                warnings.warn("No dataloaders found in the config, the dataloaders will be initialized with the default parameters.")
+                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader({})
+            if "optimizer" in self.config.keys():
+                self.optimizer, self.scheduler = get_optimizer_and_scheduler(self.config, self.diffmodel.parameters())
+            else:
+                warnings.warn("No optimizer found in the config, the optimizer will be initialized with the default parameters.")
+                self.optimizer, self.scheduler = get_optimizer_and_scheduler({}, self.diffmodel.parameters())
+            if "model_id" in self.config.keys():
+                self.model_id = self.config["model_id"]
+            else:
+                if hasattr(self, "model_id"):
+                    pass
+                else:
+                    warnings.warn("No model id found in the config use the set_model_id method.")
+            if "ckpt_dir" in self.config.keys():
+                self.ckpt_dir = self.config["ckpt_dir"]
+            else:
+                if hasattr(self, "ckpt_dir"):
+                    pass
+                else:
+                    warnings.warn("No ckpt dir found in the config use the set_ckpt_sample method.")
+            if "sample_dir" in self.config.keys():
+                self.sample_dir = self.config["sample_dir"]
+            else:
+                if hasattr(self, "sample_dir"):
+                    pass
+                else:
+                    warnings.warn("No sample dir found in the config use the set_ckpt_sample method.")
+            if "ckpt_epoch" in self.config.keys():
+                self.ckpt_epoch = self.config["ckpt_epoch"]
+            else:
+                if hasattr(self, "ckpt_epoch"):
+                    pass
+                else:
+                    warnings.warn("No ckpt step found in the config use the set_ckpt_sample method.")
+            if "separate_ckpt" in self.config.keys():
+                self.separate_ckpt = self.config["separate_ckpt"]
+            else:
+                if hasattr(self, "separate_ckpt"):
+                    pass
+                else:
+                    self.separate_ckpt = False
+            if "sample_epoch" in self.config.keys():
+                self.sample_epoch = self.config["sample_epoch"]
+            else:
+                if hasattr(self, "sample_epoch"):
+                    pass
+                else:
+                    warnings.warn("No sample step found in the config use the set_ckpt_sample method.")
+            if "sample_size" in self.config.keys():
+                self.sample_size = self.config["sample_size"]
+            else:
+                if hasattr(self, "sample_size"):
+                    pass
+                else:
+                    warnings.warn("No sample size found in the config use the set_ckpt_sample method.")
+            if "results_size" in self.config.keys():
+                self.results_size = self.config["results_size"]
+            else:
+                if hasattr(self, "results_size"):
+                    pass
+                else:
+                    warnings.warn("No results size found in the config use the set_ckpt_sample method.")
+            if "epochs" in self.config.keys(): ## Will get overwritten if epochs is provided as an argument or in a ckpt
+                self.epochs = self.config["epochs"]
+            else:
+                if hasattr(self, "epochs"): 
+                    pass
+                else:
+                    warnings.warn("No epochs found in the config.")
+
+        def find_and_load_ckpt():
+            if "ckpt_dir" in self.config.keys():
+                ckpt_dir = self.config["ckpt_dir"]
+            elif hasattr(self, "ckpt_dir"):
+                ckpt_dir = self.ckpt_dir
+                print("No ckpt dir path provided, using ckpt dir find in the attributes of the diffuser.")
+            else:
+                print("No ckpt dir path provided, trying to find the ckpt in the default ckpt dir (./ckpt).")
+                ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ckpt")
+            if "model_id" in self.config.keys():
+                ckpt_name = self.config["model_id"]
+            elif hasattr(self, "model_id"):
+                ckpt_name = self.model_id
+                print("No model id provided, using model id find in the attributes of the diffuser.")
+            else:
+                print("No model id provided, trying to find the ckpt with the default model id (DefaultDDPM).")
+                ckpt_name = "DefaultDDPM"
+            if os.path.isfile(os.path.join(ckpt_dir, ckpt_name,'ckpt.pt')):
+                self.load_ckpt(path = os.path.join(ckpt_dir, ckpt_name, 'ckpt.pt'), for_training = for_training)
+            else:
+                warnings.warn("No checkpoint found in the ckpt_dir, the model will be initialized with the default torch layer parameters.")
+        
+        if type(config) == str:
+            with open(kwargs["config"]) as f:
+                self.config = json.load(f)
+            load_dict()
+            if new_model_id is not None:
+                self.set_model_id(new_model_id)
+            if also_ckpt:
+                try:
+                    find_and_load_ckpt()
+                except:
+                    warnings.warn("Error when loading the checkpoint, load it manually using load_ckpt(path = ..., for_training = ...) and check the arguments you provide.")
+
+        elif type(config) == dict:
+            self.config = config
+            load_dict()
+            if new_model_id is not None:
+                self.set_model_id(new_model_id)
+            if also_ckpt:
+                #try:
+                find_and_load_ckpt()
+                #except:
+                #    warnings.warn("Error when loading the checkpoint, load it manually using load_ckpt(path = ..., for_training = ...) and check the arguments you provide.")   
         else:
-            raise ValueError("No checkpoint (path or dict), no model id and no config provided.")
-
+            raise ValueError("Config should be a dict or a path to a json file.")
 
     def load_ckpt(self, path = None, ckpt_dict = None, for_training = False, url = None):
         ## Getting the checkpoint if not provided
@@ -272,12 +300,12 @@ class Diffuser(nn.Module):
             raise ValueError("No checkpoint path or dict provided.")
         elif ckpt_dict is None and path is not None:
             try:
-                ckpt = torch.load(path,map_location=torch.device('cpu'))
+                ckpt_dict = torch.load(path,map_location=torch.device('cpu'))
             except:
                 raise ValueError("Could not load the checkpoint from the provided path.")
         elif ckpt_dict is None and url is not None:
             try:
-                ckpt = torch.hub.load_state_dict_from_url(url,map_location=torch.device('cpu')) ## TODO actually so cool
+                ckpt_dict = torch.hub.load_state_dict_from_url(url,map_location=torch.device('cpu')) ## TODO actually so cool
             except:
                 raise ValueError("Could not load the checkpoint from the provided url.")
         ## Loading the checkpoint
@@ -310,27 +338,113 @@ class Diffuser(nn.Module):
                 self.losses = ckpt["loss"]
             else:
                 warnings.warn("No loss found in the checkpoint, the loss will be initialized to an empty list.")
+                self.losses = []
             if "test_losses" in ckpt.keys():
                 self.test_losses = ckpt["test_losses"]
             else:
                 warnings.warn("No test loss found in the checkpoint, the test loss will be initialized to an empty list.")
+                self.test_losses = []
         else:
-            print(" Not loading the optimizer and scheduler states from the checkpoint, as well as previous training info, only the weights.")
+            print("Loading only the weights, no optimizer or scheduler.")
 
-    def save(self, **kwargs):
+
+    def save(self, all_models = False, new_model_id = None, also_ckpt = True, for_training = True):
         ## Save the model config to json dict in ckpt folder plus to the MODELS.json (if asked) and then save the ckpt
         ## Save the model to a checkpoint, with option to save the optimizer state, etc.  
         ## Option to save parameters, name, ID and stuff to a json dict in the config folder (or elsewhere) for ease of reuse
         ## TODO add MODEL_ID attribute to the class and save it to the json dict (how to generate coherent model IDs when not provided...)
+        config = self.get_config()
+        if new_model_id is not None:
+            config["model_id"] = new_model_id
+        if all_models:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'config' ,"MODELS.json")) as f:
+                total_models = json.load(f)
+            total_models[config["model_id"]] = config
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', "MODELS.json"), 'w') as f:
+                json.dump(total_models, f,indent=4)
+        if hasattr(self, "ckpt_dir") and hasattr(self, "model_id"):
+            ## Create the dir if needed:
+            if not os.path.isdir(os.path.join(self.ckpt_dir, self.model_id)):
+                os.makedirs(os.path.join(self.ckpt_dir, self.model_id))
+            with open(os.path.join(self.ckpt_dir, self.model_id,'config.json'), 'w') as f:
+                json.dump(config, f,indent=4)
+        else:
+            warnings.warn("No ckpt dir or model id found ==> not saving the config.")
+        if also_ckpt:
+            try:
+                self.save_ckpt(for_training = for_training)
+            except:
+                warnings.warn("Error when saving the checkpoint, save it manually using save_ckpt(for_training = ...) and check the arguments you provide.")
         pass
 
-    def save_ckpt(self, ckpt_folder, ckpt_name,verbose = False, ):
+    def save_ckpt(self, ckpt_dir = None, ckpt_name = None,verbose = False, for_training = True, separate = False):
         ## Save the model to a checkpoint
+        total_ckpt = {}
         diffmodel_state_dict = self.diffmodel.state_dict()
-
-        raise NotImplementedError("Saving checkpoints is not implemented yet.") ## TODO
-        print("Successfully saved checkpoint to {}".format(os.path.join(ckpt_folder, ckpt_name)))
-        return os.path.join(ckpt_folder, ckpt_name)
+        total_ckpt["diffusion_model"] = diffmodel_state_dict
+        if ckpt_name is None:
+            if hasattr(self, "model_id"):
+                ckpt_name = self.model_id
+            else:
+                raise ValueError("No model id (or ckpt name) provided, please provide one.")
+        if ckpt_dir is None:
+            if hasattr(self, "ckpt_dir"):
+                ckpt_dir = self.ckpt_dir
+            else:
+                raise ValueError("No ckpt dir provided, please provide one.")
+        if for_training:
+            if hasattr(self, "optimizer"):
+                optimizer_state_dict = self.optimizer.state_dict()
+                total_ckpt["optimizer"] = optimizer_state_dict
+            else:
+                if verbose:
+                    warnings.warn("No optimizer found, not saving the optimizer state.")
+            if hasattr(self, "scheduler"):
+                scheduler_state_dict = self.scheduler.state_dict()
+                total_ckpt["scheduler"] = scheduler_state_dict
+            else:
+                if verbose:
+                    warnings.warn("No scheduler found, not saving the scheduler state.")
+            if hasattr(self, "epoch"):
+                epoch = self.epoch
+                total_ckpt["epoch"] = epoch
+            else:
+                if verbose:
+                    warnings.warn("No epoch found, not saving the epoch.")
+            if hasattr(self, "epochs"):
+                epochs = self.epochs
+                total_ckpt["epochs"] = epochs
+            else:
+                if verbose:
+                    warnings.warn("No epochs found, not saving the epochs.")
+            if hasattr(self, "losses"):
+                losses = self.losses
+                total_ckpt["losses"] = losses
+            else:
+                if verbose:
+                    warnings.warn("No losses found, not saving the losses.")
+            if hasattr(self, "test_losses"):
+                test_losses = self.test_losses
+                total_ckpt["test_losses"] = test_losses
+            else:
+                if verbose:
+                    warnings.warn("No test losses found, not saving the test losses.")            
+        else:
+            if verbose:
+                warnings.warn("Not saving the optimizer and scheduler states, as well as previous training info.")
+        if not separate:
+            if not os.path.isdir(os.path.join(ckpt_dir, ckpt_name)):
+                os.makedirs(os.path.join(ckpt_dir, ckpt_name))
+            torch.save(total_ckpt, os.path.join(ckpt_dir, ckpt_name, 'ckpt.pt'))
+            print("Successfully saved checkpoint to {}".format(os.path.join(ckpt_dir, ckpt_name)))
+            return os.path.join(ckpt_dir, ckpt_name)
+        else:
+            if not os.path.isdir(os.path.join(ckpt_dir, ckpt_name)):
+                os.makedirs(os.path.join(ckpt_dir, ckpt_name))
+            str_epoch = str(self.epoch).zfill(np.floor(np.log10(self.epochs)).astype(int)+1)
+            torch.save(total_ckpt, os.path.join(ckpt_dir, ckpt_name, 'ckpt_epoch_{}.pt'.format(str_epoch)))
+            print("Successfully saved checkpoint to {}".format(os.path.join(ckpt_dir, ckpt_name)))
+            return os.path.join(ckpt_dir)
 
     def train_parser(self,**kwargs):
         ## Parse the arguments for training
@@ -360,10 +474,12 @@ class Diffuser(nn.Module):
             print("No optimizer provided, using Adam with lr=1e-3 and setting the corresponding attr to it.")
             optimizer = optim.Adam(self.diffmodel.parameters(), lr=1e-3)
             self.optimizer = optimizer
+            self.optimizer.config = {"type": "Adam", "lr": 1e-3}
         if hasattr(self, "scheduler"):
             scheduler = self.scheduler
         else:
             scheduler = None
+            self.scheduler = None
         if "epochs" in kwargs.keys():
             epochs = kwargs["epochs"]
             print("Epochs provided as argument, using it instead of a possible one as attribute and setting the epochs attribute to it.")
@@ -375,8 +491,10 @@ class Diffuser(nn.Module):
             else:
                 print("No epochs provided, either in the constructor of the diffuser or as argument, training for 100 epochs.")
                 epochs = 100
+                self.epochs = 100
         if "train_dataloader" in kwargs.keys() and finetune:
             train_dataloader = kwargs["train_dataloader"]
+            self.train_dataloader = train_dataloader
             print("Train dataloader provided as argument, using it instead of a possible one as attribute. This only works if finetuning is set to True.")
         else:
             if hasattr(self, "train_dataloader"):
@@ -385,54 +503,98 @@ class Diffuser(nn.Module):
                 raise ValueError("No dataloader provided, either in the constructor of the diffuser or as argument.")
         if "test_dataloader" in kwargs.keys():
             test_dataloader = kwargs["test_dataloader"]
+            self.test_dataloader = test_dataloader
             print("Test dataloader provided as argument, using it instead of a possible one as attribute.")
         else:
             if hasattr(self, "test_dataloader"):
                 test_dataloader = self.test_dataloader
             else:
                 test_dataloader = None
+                self.test_dataloader = None
                 print("No test dataloader provided, either in the constructor of the diffuser or as argument, not using any test dataloader.")
         if hasattr(self, "losses") and (resume_training or finetune):
             print("Losses provided as attribute, will use those to keep continuity.")
             losses = self.losses
         else:
             losses = []
+            self.losses = []
         if hasattr(self, "test_losses") and (resume_training or finetune):
             print("Test losses provided as attribute, will use those to keep continuity.")
             test_losses = self.test_losses
         else:
             test_losses = []
+            self.test_losses = []
 
         if hasattr(self, "epoch") and (resume_training or finetune):
             print("Epoch provided as attribute, will start training from epoch.")
             epoch = self.epoch
         else:
             epoch = 0
-        return optimizer, scheduler, train_dataloader, test_dataloader, losses, test_losses, epochs, epoch, resume_training, finetune
+            self.epoch = 0
+        if not hasattr(self, 'sample_dir') or not hasattr(self, 'model_id'):
+            warnings.warn("Either model_id or sample dir not provided ==> no sample will we generated either during training or at the end.")
+            sampling = False
+        else:
+            sampling = True
+            if not hasattr(self, 'sample_size'):
+                warnings.warn("No sample size provided, 8 samples will be generated when asked, self.sample_size updated accordingly.")
+                self.sample_size = 8
+            if not hasattr(self, 'results_size'):
+                warnings.warn("No results size provided, samples at the end will be generated in the same quantity as during training, self.results_size updated accordingly.")
+                self.results_size = self.sample_size
+            if not hasattr(self, "sample_epoch"):
+                warnings.warn("No sample epoch provided, using the default value (10 percent of all epochs).")
+                self.sample_epoch = self.epochs//10
+        if not hasattr(self, "ckpt_dir"):
+            warnings.warn("No ckpt dir provided ==> no checkpoint will be saved.")
+            ckpting = False
+        else:
+            ckpting = True
+            if not hasattr(self, "ckpt_epoch"):
+                warnings.warn("No ckpt epoch provided, using the default value (10 percent of all epochs).")
+                self.ckpt_epoch = self.epochs//10
+        if "verbose" in kwargs.keys():
+            verbose = kwargs["verbose"]
+        else:
+            verbose = True
+        if "save_all_models" in kwargs.keys():
+            save_all_models = kwargs["save_all_models"] ##whether or not to save to the MODELS.json file
+        else:
+            save_all_models = False
+        if "separate_ckpt" in kwargs.keys():
+            separate_ckpt = kwargs["separate_ckpt"]
+            self.separate_ckpt = separate_ckpt
+        else:
+            if hasattr(self, "separate_ckpt"):
+                separate_ckpt = self.separate_ckpt
+            separate_ckpt = False
+        return finetune, resume_training, ckpting, sampling, verbose, save_all_models, separate_ckpt
+
 
     def train(self, **kwargs):
         ## Train the model, option resume training after loading a ckpt, finetuning a pretrained model, etc.
-        
-
         ## TODO add option to train on a subset of the dataset (for example for debugging)
-        ## TODO add checkpoint management (save, load, etc.) (BUT DO NOT MODIFY THE CKPT GIVEN AS LOADING WEIGHT....only use ckpt_dir and model_id)
 
-        optimizer, scheduler, train_dataloader, test_dataloader, losses, test_losses, epochs, epoch, resume_training, finetune = self.train_parser(**kwargs)
-        ## TODO if training without ckpting or saving, add a warning that the training will not be saved and that the user should save the model manually if he wants to keep it, or start again. 
+        finetune, resume_training, ckpting, sampling, verbose, save_all_models, separate_ckpt = self.train_parser(**kwargs)
+
+        if save_all_models:
+            self.save(all_models = True)
+        else:
+            self.save()
+
         global_step = 0
-        losses = []
-        test_losses_epoch = []
-        steps_per_epoch = len(train_dataloader)
+        steps_per_epoch = len(self.train_dataloader)
         num_timesteps = self.diffmodel.sde.N
-
+            
         ## TODO if discrete only!!!
-        for epoch in range(epochs):
+        for current_epoch in range(self.epoch,self.epochs): ## or epoch+1?
+            self.epoch = current_epoch
             self.diffmodel.train()
 
-            progress_bar = tqdm.tqdm(total=steps_per_epoch)
-            progress_bar.set_description(f"Epoch {epoch}")
+            progress_bar = tqdm.tqdm(total=steps_per_epoch, disable=not verbose)
+            progress_bar.set_description(f"Epoch {self.epoch}")
 
-            for _, batch in enumerate(train_dataloader):
+            for _, batch in enumerate(self.train_dataloader):
                 if len(batch.shape)==3:
                     batch = batch.to(device).unsqueeze(1)
                 else:
@@ -442,27 +604,25 @@ class Diffuser(nn.Module):
                     torch.randint(0, num_timesteps, (batch.shape[0],)).long().to(device)
                 )
                 loss = self.diffmodel.loss(batch, timesteps)
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
                 progress_bar.update(1)
                 logs = {"loss": loss.detach().item(), "step": global_step}
-                losses.append(loss.detach().item())
+                self.losses.append(loss.detach().item())
                 progress_bar.set_postfix(**logs)
                 global_step += 1
-                if not (scheduler is None):
-                    scheduler.step()
+                if not (self.scheduler is None):
+                    self.scheduler.step()
             progress_bar.close()
 
-            
-
-            if not (test_dataloader is None):
+            if not (self.test_dataloader is None):
                 self.diffmodel.eval()
                 with torch.no_grad():
                     loss = 0
                     tot_len = 0
-                    for _ , test_loss_batch in enumerate(test_dataloader):
+                    for _ , test_loss_batch in enumerate(self.test_dataloader):
                         if len(test_loss_batch.shape)==3:
                             test_loss_batch = test_loss_batch.to(device).unsqueeze(1)
                         else:
@@ -474,9 +634,40 @@ class Diffuser(nn.Module):
                         loss += self.diffmodel.loss(batch, timesteps).detach().cpu().item()*len(test_loss_batch)
                         tot_len += len(test_loss_batch)
 
-                test_losses_epoch.append(loss/tot_len)
+                self.test_losses.append(loss/tot_len)
                 self.diffmodel.train()
-        return losses, test_losses_epoch
+            if ckpting and (self.epoch % self.ckpt_epoch == 0):
+                if separate_ckpt:
+                    try:
+                        self.save_ckpt(separate=True, verbose=False, for_training = True)
+                    except:
+                        raise ValueError("Error when trying to save the checkpoint separately, maybe try again without the separate_ckpt option (in train method and attribute).")
+                else:
+                    self.save_ckpt(verbose=False, for_training = True)
+
+            if sampling and (self.epoch % self.sample_epoch) == 0:
+                gen = self.generate(self.sample_size)
+                str_epoch = str(self.epoch).zfill(np.floor(np.log10(self.epochs)).astype(int)+1)
+                ndigit_samples = np.floor(np.log10(self.sample_size)).astype(int)+1
+                if not os.path.isdir(os.path.join(self.sample_dir, self.model_id)):
+                    os.makedirs(os.path.join(self.sample_dir, self.model_id))
+                gen = np.split(gen.detach().cpu().numpy(),len(gen), axis = 0)
+                for i, img in enumerate(gen):
+                    file_path = os.path.join(self.sample_dir, self.model_id,"epoch_{}_{}".format(str_epoch, str(i).zfill(ndigit_samples)))
+                    np.save(file_path, img)
+            if self.epoch == self.epochs-1:
+                print("Training finished. Final sampling and checkpointing.")
+                if sampling:
+                    gen = self.generate(self.results_size)
+                    gen = np.split(gen.detach().cpu().numpy(), len(gen), axis = 0)
+                    ndigit_samples = np.floor(np.log10(self.results_size)).astype(int)+1
+                    for i, img in enumerate(gen):
+                        file_path = os.path.join(self.sample_dir, self.model_id, "results_{}".format(str(i).zfill(ndigit_samples)))
+                        np.save(file_path, img)
+                if ckpting:
+                    self.save_ckpt(verbose=False, for_training = True)
+
+        return self.losses, self.test_losses
 
 
 
@@ -489,13 +680,24 @@ class Diffuser(nn.Module):
                 raise NotImplementedError("Finetuning is not implemented yet.")
         
     
-    def generate(self, **kwargs):
-        ## Generate samples from the model with option to chose DDIM (or other) sampling method, number of samples, etc.
-        ## can also be used to generate samples from a trained model (after loading it of course).
-        ## Shouldn't have to be modified to support latent diffusion models/score based models
-        pass
-
-
+    def generate(self, sample_size = None, batch_size = None ):
+        if sample_size is None:
+            if hasattr(self, "sample_size"):
+                sample_size = self.sample_size
+            else:
+                sample_size = 16
+        if batch_size is None:
+            if hasattr(self, "batch_size"):
+                batch_size = self.batch_size
+            else:
+                batch_size = sample_size
+        generated = []
+        for _ in range(sample_size//batch_size):
+            generated.append(self.diffmodel.generate_image(batch_size))
+        if sample_size%batch_size != 0:
+            generated.append(self.diffmodel.generate_image(sample_size%batch_size))
+        generated = torch.cat(generated, dim=0)
+        return generated
 
 
     def plot(self, **kwargs):
@@ -506,7 +708,12 @@ class Diffuser(nn.Module):
         ## Retrieve training curves, samples, and logs then print them OR give the link towards the tensorboard/weight and biases project/server session
         pass
 
-
-
+def config_from_id(model_id, json_path = None):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'config' ,"MODELS.json")) as f:
+        total_models = json.load(f)
+    if model_id in total_models.keys():
+        return total_models[model_id]
+    else:
+        raise ValueError("Model id {} not found in the MODELS.json file.".format(model_id))
 ### Add general config (default stuff) function (put that where?)
 ### Add dataset function
