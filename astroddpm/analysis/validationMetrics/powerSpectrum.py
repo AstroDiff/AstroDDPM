@@ -1,150 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-
-def _spectral_iso(data_sp, bins=None, sampling=1.0, return_counts=False):
-    """
-    Internal function.
-    Check power_spectrum_iso for documentation details.
-    Parameters
-    ----------
-    data_sp : TYPE
-        DESCRIPTION.
-    bins : TYPE, optional
-        DESCRIPTION. The default is None.
-    sampling : TYPE, optional
-        DESCRIPTION. The default is 1.0.
-    return_coutns : bool, optional
-        Return counts per bin.
-    Returns
-    -------
-    bins : TYPE
-        DESCRIPTION.
-    ps_mean : TYPE
-        DESCRIPTION.
-    ps_std : TYPE
-        DESCRIPTION.
-    counts : array, optional
-        Return counts per bin return_counts=True.
-    """
-    N = data_sp.shape[0]
-    ndim = data_sp.ndim
-    # Build an array of isotropic wavenumbers making use of numpy broadcasting
-    wn = (2 * np.pi * np.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (ndim - 1))
-    wn_iso = np.zeros(data_sp.shape)
-    for i in range(ndim):
-        wn_iso += np.moveaxis(wn, 0, i) ** 2
-    wn_iso = np.sqrt(wn_iso)
-    # We do not need ND-arrays anymore
-    wn_iso = wn_iso.ravel()
-    data_sp = data_sp.ravel()
-    # We compute associations between index and bins
-    if bins is None:
-        bins = np.sort(np.unique(wn_iso)) # Default binning
-    index = np.digitize(wn_iso, bins) - 1
-    # Stacking
-    stacks = np.empty(len(bins), dtype=object)
-    for i in range(len(bins)):
-        stacks[i] = []
-    for i in range(len(index)):
-        if index[i] >= 0:
-            stacks[index[i]].append(data_sp[i])
-    counts = []
-    # Computation for each bin of the mean power spectrum and standard deviations of the mean
-    ps_mean = np.zeros(len(bins), dtype=data_sp.dtype) # Allow complex values (for cross-spectrum)
-    ps_std = np.zeros(len(bins)) # If complex values, note that std first take the modulus
-    for i in range(len(bins)):
-        ps_mean[i] = np.mean(stacks[i])
-        count = len(stacks[i])
-        ps_std[i] = np.std(stacks[i]) / np.sqrt(count)
-        counts.append(count)
-    if return_counts:
-        return bins, ps_mean, ps_std, np.array(counts)
-    else:
-        return bins, ps_mean, ps_std
-    
-
-def power_spectrum(data, data2=None, norm=None):
-    """
-    Compute the full power spectrum of input data.
-    Parameters
-    ----------
-    data : array
-        Input data.
-    norm : str
-        FFT normalization. Can be None or 'ortho'. The default is None.
-    Returns
-    -------
-    None.
-    """
-    if data2 is None:
-        result=np.absolute(np.fft.fftn(data, norm=norm))**2
-    else:
-        result=np.real(np.conjugate(np.fft.fftn(data, norm=norm))*np.fft.fftn(data2, norm=norm))
-    return result
-
-def power_spectrum_iso(data, data2=None, bins=None, sampling=1.0, norm=None, return_counts=False):
-    """
-    Compute the isotropic power spectrum of input data.
-    bins parameter should be a list of bin edges defining:
-    bins[0] <= bin 0 values < bins[1]
-    bins[1] <= bin 1 values < bins[2]
-                ...
-    bins[N-2] <= bin N-2 values < bins[N-1]
-    bins[N-1] <= bin N-1 values
-    Note that the last bin has no superior limit.
-    Parameters
-    ----------
-    data : array
-        Input data.
-    bins : array, optional
-        Array of bins. If None, we use a default binning which corresponds to a full isotropic power spectrum.
-        The default is None.
-    sampling : float, optional
-        Grid size. The default is 1.0.
-    norm : TYPE, optional
-        FFT normalization. Can be None or 'ortho'. The default is None.
-    return_counts: bool, optional
-        Return counts per bin. The default is None
-    Raises
-    ------
-    Exception
-        DESCRIPTION.
-    Returns
-    -------
-    bins : TYPE
-        DESCRIPTION.
-    ps_mean : TYPE
-        DESCRIPTION.
-    ps_std : TYPE
-        DESCRIPTION.
-    counts : array, optional
-        If return_counts=True, counts per bin.
-    """
-    # Check data shape
-    for i in range(data.ndim):
-        if data.shape[i] != data.shape[0]:
-            raise Exception("Input data must be of shape (N, ..., N).")
-    # Compute the full power spectrum of input data
-    if data2 is None:
-        data_ps = power_spectrum(data, norm=norm)
-    else:
-        data_ps = power_spectrum(data, data2=data2, norm=norm)
-    return _spectral_iso(data_ps, bins=bins, sampling=sampling, return_counts=return_counts)
-
-## Computing Statistics accross a set
-#####################################################
-
-def set_power_spectrum_iso(dataset, bins = np.linspace(0, np.pi, 100), only_stat = True):
-    n = len(dataset)
-    power_spectra=np.concatenate([power_spectrum_iso(dataset[i],bins=bins)[1].reshape(1,100) for i in range(n)],axis=0)
-    mean, std = np.mean(power_spectra,axis=0), np.std(power_spectra,axis=0)
-    if only_stat:
-        return mean, std, bins
-    else:
-        return power_spectra, mean, std, bins
-
+import torch
+import torch.nn.functional as F
+from astroddpm.runners import Diffuser
+from astroddpm.analysis.validationMetrics.basics import get_samples
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ## Plotting
 #####################################################
@@ -170,20 +30,21 @@ def plot_ps(bins, ps_list, labels=None, show=False, save_name=None,title=None):
         plt.close(fig)
 
 
-def plot_set_power_spectrum_iso(dataset_list, bins, max_width = 3, labels = None):
-    n = len(dataset_list)
+def plot_set_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 100), max_width = 3, labels = None):
+    n = len(data_list)
     h , w = (n+max_width-1)//max_width, n%max_width
     print(h, w)
     fig, ax = plt.subplots( h, w, figsize = (w*7 , h*7), layout='constrained')
     bins_centers = (bins[:-1] + bins[1:])/2
+    bins_centers = bins_centers.cpu().numpy()
     mean_list = []
     if n <= max_width:
         if n == 0:
             raise ValueError('No power spectrum to plot')
         elif n == 1:
-            mean, std, _ = set_power_spectrum_iso(dataset[0], bins)
-            mean = mean[:99]
-            std = std[:99]
+            mean, std, _ = set_power_spectrum_iso2d(data_list[0].to(device), bins)
+            mean = mean[:99].cpu().numpy()
+            std = std[:99].cpu().numpy()
             mean_list.append(mean)
             ax.plot(bins_centers,mean,'-k')
             ax.fill_between(bins_centers,mean+std,mean-std)
@@ -194,10 +55,10 @@ def plot_set_power_spectrum_iso(dataset_list, bins, max_width = 3, labels = None
                 ax.title.set_text(labels)
 
         else:
-            for idx, dataset in enumerate(dataset_list):
-                mean, std, _ = set_power_spectrum_iso(dataset, bins)
-                mean = mean[:99]
-                std = std[:99]
+            for idx, data in enumerate(data_list):
+                mean, std, _ = set_power_spectrum_iso2d(data.to(device), bins)
+                mean = mean[:99].cpu().numpy()
+                std = std[:99].cpu().numpy()
                 mean_list.append(mean)
                 ax[idx].plot(bins_centers,mean,'-k')
                 ax[idx].fill_between(bins_centers,mean+std,mean-std)
@@ -209,10 +70,10 @@ def plot_set_power_spectrum_iso(dataset_list, bins, max_width = 3, labels = None
     else:
         fig.supylabel('Isotropic Power')
         fig.supxlabel('Wavenumber')
-        for idx, dataset in enumerate(dataset_list):
-            mean, std, _ = set_power_spectrum_iso(dataset, bins)
-            mean = mean[:99]
-            std = std[:99]
+        for idx, data in enumerate(data_list):
+            mean, std, _ = set_power_spectrum_iso2d(data.to(device), bins)
+            mean = mean[:99].cpu().numpy()
+            std = std[:99].cpu().numpy()
             mean_list.append(mean)
             ax[idx//max_width][idx%max_width].plot(bins_centers,mean,'-k')
             ax[idx//max_width][idx%max_width].fill_between(bins_centers,mean+std,mean-std)
@@ -238,8 +99,38 @@ def plot_set_power_spectrum_iso(dataset_list, bins, max_width = 3, labels = None
     plt.show()
     return mean_list, bins_centers, labels
 
+def plot_ps_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 128, savefig = None, bins = torch.linspace(0, np.pi, 100)):
+    if samples is None:
+        ## Get results from the sample_dir corresponding to the diffuser
+        samples = torch.from_numpy(get_samples(diffuser))
+    if len(samples.shape) == 3:
+        samples = samples.unsqueeze(1).to(device)
+    label_samp = diffuser.config["model_id"]
+    try:
+        label_dataset = diffuser.config["dataloaders"]["dataset"]["name"]
+    except:
+        label_dataset = "Dataset"
+    ## Get elements of the dataset
+    dataset = diffuser.train_dataloader.dataset
+    shape = dataset[0].shape
+    if len(shape) == 3:
+        datapoints = torch.cat([dataset[i].reshape(1,-1,shape[1], shape[2]) for i in range(min(len(dataset), max_num_samples))]).to(device)
+    elif len(shape) == 2:
+        datapoints = torch.cat([dataset[i].reshape(1,1,shape[0], shape[1]) for i in range(min(len(dataset), max_num_samples))]).to(device)
+    else:
+        datapoints = torch.cat([dataset[i] for i in range(min(len(dataset), max_num_samples))]).to(device)
+    
+    ## Compute power spectrum
+    if not(isinstance(bins, torch.Tensor)):
+        bins = torch.linspace(0, np.pi, 100)
+    bins = bins.to(device)
+
+    return plot_set_power_spectrum_iso2d([samples, datapoints], bins = bins, labels = [label_samp, label_dataset])
+
+
 def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = np.linspace(0, np.pi, 100), title = None, only_trajectories= True, max_width = 2, relative_error = True):
     """ All tensor should be given as torch tensor of shape bs, ch, h, w, even for singular images"""
+    raise NotImplementedError("This function is not working properly")
     _, b0, _ = power_spectrum_iso(baseline[0][0].cpu(),bins=bins)
     _, b2, _ = power_spectrum_iso(samples[0][0].detach().cpu(),bins=bins)
     _, b3, _ = power_spectrum_iso(noisy[0][0].detach().cpu(), bins=bins)
@@ -376,3 +267,140 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = np.li
     plt.show()
         
     return b0, b3, mean_, std_, bins
+
+
+#####################################################
+## DIFUSER VERSION ( & torchified)
+#####################################################
+
+def fourriercov2d(data, data2=None, norm=None):
+    """ Compute the power spectrum of the input data or the cross spectrum if data2 is not None. Returns a torch tensor on the device."""
+    with torch.no_grad():
+        if isinstance(data, np.ndarray):
+            data = torch.from_numpy(data).to(device)
+        else:
+            data = data.to(device)
+        if data2 is not None:
+            if isinstance(data2, np.ndarray):
+                data2 = torch.from_numpy(data2).to(device)
+            else:
+                data2 = data2.to(device)
+        if data2 is None:
+            result=torch.absolute(torch.fft.fft2(data, norm=norm))**2
+        else:
+            result=torch.conj(torch.fft.fft2(data, norm=norm))*torch.fft.fft2(data2, norm=norm)
+        return result
+
+def power_spectrum_2d(data, bins=None, sampling=1.0, norm=None, return_counts=False):
+    '''Data is supposed to have shape B x C x H x W.
+    If C = 1, then we compute the power spectrum of each image
+    If C >=1 we compute the power spectrum of each channel & the cross spectrum for every pair of channels.
+    This will lead to a tensor of shape (B x C X C x H x W).
+    One should keep in mind that for i != j the cross spectrum is not symetric but it is conjugate transpose with complex values.
+    '''
+    if data.shape[1]==1:
+        ## We only have to compute the power spectrum of each image
+        return fourriercov2d(data, norm=norm)
+    else:
+        B, C, H, W = data.shape
+        dims_pair = [(i,j) for i in range(C) for j in range(i+1)]
+        input_tensors1 = []
+        input_tensors2 = []
+        for pair in dims_pair:
+            i , j = pair
+            input_tensors1.append(data[:,i])
+            input_tensors2.append(data[:,j])
+        input_tensors1 = torch.cat(input_tensors1, dim=0).to(device)
+        input_tensors2 = torch.cat(input_tensors2, dim=0).to(device)
+        res = torch.zeros((B, C, C, H, W), dtype=torch.complex64, device=device)
+        stacked = fourriercov2d(input_tensors1, data2=input_tensors2, norm=norm).cpu()
+        for idx, pair in enumerate(dims_pair):
+            i , j = pair
+            res[:,i,j] = stacked[idx*B:(idx+1)*B]
+            if i != j:
+                res[:,j,i] = torch.conj(stacked[idx*B:(idx+1)*B])
+        return res
+
+
+def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False):
+    '''Given a B x C x H x W or a B x C x C x H x W tensor, compute the isotropic power spectrum of each image (only over the B dimension)'''
+    input_dim = data_sp.ndim
+
+    if input_dim == 4:
+        B, C, _, N = data_sp.shape
+        assert C==1, "There was an issue with power_spectrum2d that didn't take into account the channel dimension"
+        ## We only have a power spectrum for each image
+        n_dim = 2
+        wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1)).to(device)
+        wn_iso = torch.zeros(data_sp.shape).to(device)
+        for i in range(n_dim):
+            wn_iso += torch.moveaxis(wn, 0, i) ** 2
+        wn_iso = torch.sqrt(wn_iso)
+        wn_iso = wn_iso.reshape(B, C, -1) ## C = 1
+        data_sp = data_sp.reshape(B, C, -1)
+
+        if bins is None:
+            bins = torch.sort(torch.unique(wn_iso))[0]
+        BINS = len(bins)
+        index = torch.bucketize(wn_iso, bins)
+        index_mask = F.one_hot(index, BINS+1).to(device) ## we will discard the first bin
+
+        counts = torch.sum(index_mask, dim=[1, 2])
+        ps_mean = torch.sum(index_mask * data_sp.unsqueeze(-1), dim=[1, 2]) / counts
+
+        ps_std = torch.sqrt(torch.sum(index_mask * (data_sp.unsqueeze(-1) - ps_mean.reshape(B, 1, 1, BINS +1)) ** 2, dim=[1, 2]) / counts)
+
+        ps_mean, ps_std = ps_mean[:,1:], ps_std[:,1:] ## discard the first bin
+        
+        if return_counts:
+            return bins, ps_mean, ps_std, torch.tensor(counts)
+        else:
+            return bins, ps_mean, ps_std ## Bins, Shape B x len(bins) , idem
+    elif input_dim == 5:
+        ## We have a power spectrum for each pairs of channels
+        B, C,_, _, N = data_sp.shape
+        assert data_sp.shape == (B, C, C, N, N) 
+        n_dim = 2
+        wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1))
+        wn_iso = torch.zeros(data_sp.shape)
+        for i in range(n_dim):
+            wn_iso += torch.moveaxis(wn, 0, i) ** 2
+        wn_iso = torch.sqrt(wn_iso)
+        wn_iso = wn_iso.reshape(B, C, C, -1)
+        data_sp = data_sp.reshape(B, C, C, -1)
+
+        if bins is None:
+            bins = torch.sort(torch.unique(wn_iso))[0]
+        BINS = len(bins)
+        index = torch.bucketize(wn_iso, bins)
+        index_mask = F.one_hot(index, BINS+1).to(device) ## we will discard the first bin
+        counts = torch.sum(index_mask, dim=3)
+        ps_mean = torch.sum(index_mask * data_sp.unsqueeze(-1), dim=3) / counts
+        temp = (data_sp.unsqueeze(-1) - ps_mean.unsqueeze(3)) ** 2
+        ps_std = torch.sqrt(torch.sum(index_mask * temp, dim=3) / counts)
+
+        ps_mean, ps_std = ps_mean[:,:,:,1:], ps_std[:,:,:,1:] ## discard the first bin
+
+        if return_counts:
+            return bins, ps_mean, ps_std, torch.tensor(counts)
+        else:
+            return bins, ps_mean, ps_std
+    else:
+        raise ValueError("The input tensor should have 4 or 5 dimensions")
+
+
+def power_spectrum_iso2d(data, bins=None, sampling=1.0, norm=None, return_counts=False):
+    '''Different behavior depending on the shape of data'''
+    data_sp = power_spectrum_2d(data, norm=norm)
+    return _spectral_iso2d(data_sp, bins=bins, sampling=sampling, return_counts=return_counts) ## Bins , Shape B x 1 x len(bins) or B x C x C x len(bins), idem
+
+    
+def set_power_spectrum_iso2d(data, bins = np.linspace(0, np.pi, 100), only_stat = True):
+    '''Data should have shape (N, C, H, W)'''
+
+    _, power_spectra, _ = power_spectrum_iso2d(data, bins=bins)
+    mean, std = torch.mean(power_spectra,axis=0).reshape(-1), torch.std(power_spectra,axis=0).reshape(-1) ## Average over dim 0 (B dimension)
+    if only_stat:
+        return mean, std, bins
+    else:
+        return power_spectra, mean, std, bins
