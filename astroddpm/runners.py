@@ -18,10 +18,10 @@ from torchvision.utils import save_image
 import warnings
 import tqdm
 
-import datahandler.dataset as dataset
-from diffusion import dm
-from diffusion.stochastic import sde
-from utils.scheduler import InverseSquareRootScheduler, CosineAnnealingScheduler, LinearScheduler, WarmUp, get_optimizer_and_scheduler
+from astroddpm.datahandler.dataset import get_dataset_and_dataloader
+from astroddpm.diffusion import dm
+from astroddpm.diffusion.stochastic import sde
+from astroddpm.utils.scheduler import InverseSquareRootScheduler, CosineAnnealingScheduler, LinearScheduler, WarmUp, get_optimizer_and_scheduler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ## List of knwargs for Diffuser class: use_gpu, device, config, diffusion_model, dataset, dataloader, optimizer, learning rate, scheduler, logging stuff (weight and biases, tensorboard, etc.)
@@ -174,10 +174,10 @@ class Diffuser(nn.Module):
                 warnings.warn("No diffusion model found in the config, the model will be initialized with the default parameters.")
                 self.diffmodel = dm.get_diffusion_model({}).to(device)
             if "dataloaders" in self.config.keys():
-                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader(self.config["dataloaders"])
+                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = get_dataset_and_dataloader(self.config["dataloaders"])
             else:
                 warnings.warn("No dataloaders found in the config, the dataloaders will be initialized with the default parameters.")
-                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = dataset.get_dataset_and_dataloader({})
+                self.train_dataset, self.test_dataset, self.train_dataloader, self.test_dataloader = get_dataset_and_dataloader({})
             if "optimizer" in self.config.keys():
                 self.optimizer, self.scheduler = get_optimizer_and_scheduler(self.config, self.diffmodel.parameters())
             else:
@@ -334,10 +334,10 @@ class Diffuser(nn.Module):
             else:
                 warnings.warn("No epochs found in the checkpoint, the epochs will be initialized to 100.")
                 self.epochs = 100
-            if "loss" in ckpt.keys():
-                self.losses = ckpt["loss"]
+            if "losses" in ckpt.keys():
+                self.losses = ckpt["losses"]
             else:
-                warnings.warn("No loss found in the checkpoint, the loss will be initialized to an empty list.")
+                warnings.warn("No losses found in the checkpoint, the loss will be initialized to an empty list.")
                 self.losses = []
             if "test_losses" in ckpt.keys():
                 self.test_losses = ckpt["test_losses"]
