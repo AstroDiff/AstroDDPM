@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
-import os
 import torch
-import re
-
+from astroddpm.runners import get_samples
 
 def plot_hist_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 100, savefig = None):
     if samples is None:
@@ -39,19 +37,3 @@ def wasserstein(diffuser, samples = None, max_num_samples = 100):
     ## Compute wasserstein distance
     wasserstein = stats.wasserstein_distance(samples.flatten(), datapoints.flatten())
     return wasserstein
-
-
-
-def get_samples(diffuser):
-    pattern_results = r'results_(\d+)'
-    l = os.listdir(os.path.join(diffuser.config["sample_dir"],diffuser.config["model_id"]))
-    results = [file for file in l if re.match(pattern_results, file)]
-    ## Collect all the np img in results
-    samples = [np.load(os.path.join(diffuser.config["sample_dir"],diffuser.config["model_id"],file)) for file in results]
-    ## Reshape samples so that they are (N_samples, C, H, W)
-    if len(samples[0].shape) == 2:
-        samples = [np.reshape(sample, (1, 1, sample.shape[0], sample.shape[1])) for sample in samples]
-    elif len(samples[0].shape) == 3:
-        samples = [np.reshape(sample, (1, sample.shape[0], sample.shape[1], sample.shape[2])) for sample in samples]
-    samples = np.concatenate(samples, axis = 0)
-    return samples

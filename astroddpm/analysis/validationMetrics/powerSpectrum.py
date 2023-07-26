@@ -3,25 +3,205 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 from astroddpm.runners import Diffuser
-from astroddpm.analysis.validationMetrics.basics import get_samples
+from astroddpm.runners import get_samples
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ## Plotting
 #####################################################
 
 
-def plot_ps(bins, ps_list, labels=None, show=False, save_name=None,title=None):
+def plot_ps2d(bins, ps_list, labels=None, show=True, save_name=None,title=None, elementary_figsize = (5, 5)):
     bins_centers = (bins[:-1] + bins[1:])/2
 
-    fig, ax = plt.subplots(1, 1)
-    for idx, ps in enumerate(ps_list):
-        ax.plot(bins_centers, ps[:-1], label=labels[idx] if labels is not None else None)
-    if labels is not None:
-        ax.legend()
-    ax.set_xscale('log')
-    ax.set_yscale('log')
+    shape = ps_list[0].shape
+    W, H = elementary_figsize
+    if len(shape) == 1:
+        fig, ax = plt.subplots(1, 1, figsize = elementary_figsize)
+        for idx, ps in enumerate(ps_list):
+            ax.plot(bins_centers.cpu(), ps[:-1].cpu(), label=labels[idx] if labels is not None else None)
+        if labels is not None:
+            ax.legend()
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        if not(title is None):
+            plt.title(title)
+        if save_name is not None:
+            fig.savefig(save_name, facecolor='white', transparent=False)
+        if show:
+            fig.show(warn=False)
+        else:
+            plt.close(fig)
+        return fig, ax
+    elif len(shape) == 2:
+        raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+    elif len(shape) == 3:
+        fig, ax = plt.subplots(shape[1], shape[1], figsize=(shape[1]*W, shape[1]*H), layout='constrained',sharex=True)
+        for idx, ps in enumerate(ps_list):
+            for i in range(shape[1]):
+                for j in range(shape[1]):
+                    if i < j:
+                        ax[i,j].axis('off')
+                    elif i == j:
+                        ax[i][j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), label=labels[idx] if labels is not None else None)
+                        ax[i][j].set_xscale('log')
+                        ax[i][j].set_yscale('log')
+                    else:
+                        ps_to_plot = ps[i,j,:-1]/torch.sqrt(ps[i,i,:-1]*ps[j,j,:-1])
+                        ax[i][j].plot(bins_centers.cpu(), ps_to_plot.cpu(), label=labels[idx] if labels is not None else None)
+                        ax[i][j].set_xscale('log')
+
+                    if labels is not None:
+                        ax[i][j].legend()
+        if not(title is None):
+            fig.suptitle(title)
+        if save_name is not None:
+            fig.savefig(save_name, facecolor='white', transparent=False)
+        if show:
+            fig.show(warn=False)
+        else:
+            plt.close(fig)
+        return fig, ax
+
+def plot_set_power_spectrum_iso2d(data, bins = torch.linspace(0, np.pi, 100), title = None, show = True, save_name = None, elementary_figsize = (5, 5)):
+    mean_, std_ , bins = set_power_spectrum_iso2d(data.to(device), bins)
+    bins_centers = (bins[:-1] + bins[1:])/2
+    bins_centers = bins_centers.cpu()
+    W, H = elementary_figsize
+    if mean_.ndim == 1:
+        fig, ax = plt.subplots(1, 1)
+        mean = mean_[:-1].cpu()
+        std = std_[:-1].cpu()
+        ax.plot(bins_centers,mean,'-k')
+        ax.fill_between(bins_centers,mean+std,mean-std)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        if save_name is not None:
+            fig.savefig(save_name)
+    elif mean_.ndim == 3:
+        shape = mean_.shape
+        fig, ax = plt.subplots(shape[1], shape[1], figsize=(shape[1]*W, shape[1]*H), layout='constrained',sharex=True)
+        for i in range(shape[1]):
+            for j in range(shape[1]):
+                if i < j:
+                    ax[i,j].axis('off')
+                elif i == j:
+                    mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                    ax[i][j].plot(bins_centers, mean, '-k')
+                    ax[i][j].fill_between(bins_centers, mean+std, mean-std)
+                    ax[i][j].set_xscale('log')
+                    ax[i][j].set_yscale('log')
+                else:
+                    normalization = torch.sqrt(mean_[i,i,:-1]*mean_[j,j,:-1]).cpu()
+                    mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                    ax[i][j].plot(bins_centers, mean/normalization, '-k')
+                    ax[i][j].fill_between(bins_centers, (mean+std)/normalization, (mean-std)/normalization)
+                    ax[i][j].set_xscale('log')         
+
+    else:
+        raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+    
     if not(title is None):
-        plt.title(title)
+        fig.suptitle(title)
+    if show:
+        fig.show(warn=False)
+    else:
+        plt.close(fig)
+    return mean_, std_, bins
+
+
+def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 100), max_width = 3, labels = None, elementary_figsize = (5, 5), save_name = None, show = True, title= None):
+    ## Computations
+    bins_centers = (bins[:-1] + bins[1:])/2
+    bins_centers = bins_centers.cpu()
+    mean_list = []
+    std_list = []
+    for data in data_list:
+        mean_, std_ , bins = set_power_spectrum_iso2d(data.to(device), bins)
+        mean_list.append(mean_)
+        std_list.append(std_)
+    
+    ndim = mean_list[0].ndim
+    ## Figure
+    n = len(data_list)
+    h , w = (n+max_width-1)//max_width, n%max_width
+
+    if n <= max_width:
+        if n == 0:
+            raise ValueError('No power spectrum to plot')
+        elif n == 1:
+            title = labels if labels is not None else None
+            fig, mean_, std, bins = plot_set_power_spectrum_iso2d(data_list[0], bins = bins, label = title, show = True, elementary_figsize = elementary_figsize)
+
+        else:
+            fig = plt.figure(constrained_layout=True, figsize = (w*elementary_figsize[0] , h*elementary_figsize[1]))
+            subfigs = fig.subfigures(nrows = h, ncols = w)
+            for idx, mean_, std_ in (zip(range(n), mean_list, std_list)):
+                if ndim == 1:
+                    ax = subfigs[idx].subplots(1, 1)
+                    mean = mean_[:-1].cpu()
+                    std = std_[:-1].cpu()
+                    ax.plot(bins_centers,mean,'-k')
+                    ax.fill_between(bins_centers,mean+std,mean-std)
+                    ax.set_xscale('log')
+                    ax.set_yscale('log')
+                elif ndim == 3:
+                    axs = subfigs[idx].subplots(mean_.shape[1], mean_.shape[1], sharex = True)
+                    shape = mean_.shape
+                    for i in range(shape[1]):
+                        for j in range(shape[1]):
+                            if i < j:
+                                axs[i,j].axis('off')
+                            elif i == j:
+                                mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                                axs[i][j].plot(bins_centers, mean, '-k')
+                                axs[i][j].fill_between(bins_centers, mean+std, mean-std)
+                                axs[i][j].set_xscale('log')
+                                axs[i][j].set_yscale('log')
+                            else:
+                                normalization = torch.sqrt(mean_[i,i,:-1]*mean_[j,j,:-1]).cpu()
+                                mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                                axs[i][j].plot(bins_centers, mean/normalization, '-k')
+                                axs[i][j].fill_between(bins_centers, (mean+std)/normalization, (mean-std)/normalization)
+                                axs[i][j].set_xscale('log')
+                else:
+                    raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+    else:
+        fig = plt.figure(constrained_layout=True, figsize = (w*elementary_figsize[0] , h*elementary_figsize[1]))
+        subfigs = fig.subfigures(nrows = h, ncols = w)
+        fig.supylabel('Isotropic Power')
+        fig.supxlabel('Wavenumber')
+        for idx, mean_, std_ in (zip(range(n), mean_list, std_list)):
+            if ndim == 1:
+                ax = subfigs[idx//h][idx%h].subplots(1, 1)
+                mean = mean_[:-1].cpu()
+                std = std_[:-1].cpu()
+                ax.plot(bins_centers,mean,'-k')
+                ax.fill_between(bins_centers,mean+std,mean-std)
+                ax.set_xscale('log')
+                ax.set_yscale('log')
+            elif ndim == 3:
+                axs = subfigs[idx//h][idx%h].subplots(mean_.shape[1], mean_.shape[1],sharex=True)
+                shape = mean_.shape
+                for i in range(shape[1]):
+                    for j in range(shape[1]):
+                        if i < j:
+                            axs[i,j].axis('off')
+                        elif i == j:
+                            mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                            axs[i][j].plot(bins_centers, mean, '-k')
+                            axs[i][j].fill_between(bins_centers, mean+std, mean-std)
+                            axs[i][j].set_xscale('log')
+                            axs[i][j].set_yscale('log')
+                        else:
+                            normalization = torch.sqrt(mean_[i,i,:-1]*mean_[j,j,:-1]).cpu()
+                            mean, std = mean_[i,j,:-1].cpu(), std_[i,j,:-1].cpu()
+                            axs[i][j].plot(bins_centers, mean/normalization, '-k')
+                            axs[i][j].fill_between(bins_centers, (mean+std)/normalization, (mean-std)/normalization)
+                            axs[i][j].set_xscale('log')
+            else:
+                raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+    if not(title is None):
+        fig.suptitle(title)
     if save_name is not None:
         fig.savefig(save_name, facecolor='white', transparent=False)
     if show:
@@ -29,75 +209,9 @@ def plot_ps(bins, ps_list, labels=None, show=False, save_name=None,title=None):
     else:
         plt.close(fig)
 
-
-def plot_set_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 100), max_width = 3, labels = None):
-    n = len(data_list)
-    h , w = (n+max_width-1)//max_width, n%max_width
-    print(h, w)
-    fig, ax = plt.subplots( h, w, figsize = (w*7 , h*7), layout='constrained')
-    bins_centers = (bins[:-1] + bins[1:])/2
-    bins_centers = bins_centers.cpu().numpy()
-    mean_list = []
-    if n <= max_width:
-        if n == 0:
-            raise ValueError('No power spectrum to plot')
-        elif n == 1:
-            mean, std, _ = set_power_spectrum_iso2d(data_list[0].to(device), bins)
-            mean = mean[:99].cpu().numpy()
-            std = std[:99].cpu().numpy()
-            mean_list.append(mean)
-            ax.plot(bins_centers,mean,'-k')
-            ax.fill_between(bins_centers,mean+std,mean-std)
-
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-            if not(labels is None) and len(labels) > idx:
-                ax.title.set_text(labels)
-
-        else:
-            for idx, data in enumerate(data_list):
-                mean, std, _ = set_power_spectrum_iso2d(data.to(device), bins)
-                mean = mean[:99].cpu().numpy()
-                std = std[:99].cpu().numpy()
-                mean_list.append(mean)
-                ax[idx].plot(bins_centers,mean,'-k')
-                ax[idx].fill_between(bins_centers,mean+std,mean-std)
-
-                ax[idx].set_xscale('log')
-                ax[idx].set_yscale('log')
-                if not(labels is None) and len(labels) > idx:
-                    ax[idx].title.set_text(labels[idx])
-    else:
-        fig.supylabel('Isotropic Power')
-        fig.supxlabel('Wavenumber')
-        for idx, data in enumerate(data_list):
-            mean, std, _ = set_power_spectrum_iso2d(data.to(device), bins)
-            mean = mean[:99].cpu().numpy()
-            std = std[:99].cpu().numpy()
-            mean_list.append(mean)
-            ax[idx//max_width][idx%max_width].plot(bins_centers,mean,'-k')
-            ax[idx//max_width][idx%max_width].fill_between(bins_centers,mean+std,mean-std)
-
-            ax[idx//max_width][idx%max_width].set_xscale('log')
-            ax[idx//max_width][idx%max_width].set_yscale('log')
-            if not(labels is None) and len(labels) > idx:
-                ax[idx//max_width][idx%max_width].title.set_text(labels[idx])
-    plt.show()
-    fig2, ax2 = plt.subplots(1, 1)
-    for i, mean in enumerate(mean_list):
-        if labels is None:
-            ax2.plot(bins_centers,mean)
-        else:
-            ax2.plot(bins_centers,mean,label=labels[i])
-        ax2.set_xscale('log')
-        ax2.set_yscale('log')
-
-        plt.legend()
-
-        fig2.supylabel('Isotropic Power')
-        fig2.supxlabel('Wavenumber')
-    plt.show()
-    return mean_list, bins_centers, labels
+    _, _ = plot_ps2d(bins, mean_list, labels=labels, show=True)
+ 
+    return mean_list, std_list, bins_centers, labels
 
 def plot_ps_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 128, savefig = None, bins = torch.linspace(0, np.pi, 100)):
     if samples is None:
@@ -125,11 +239,11 @@ def plot_ps_samples_dataset(diffuser, samples = None, title = None, legend = Tru
         bins = torch.linspace(0, np.pi, 100)
     bins = bins.to(device)
 
-    return plot_set_power_spectrum_iso2d([samples, datapoints], bins = bins, labels = [label_samp, label_dataset])
+    return plot_sets_power_spectrum_iso2d([samples, datapoints], bins = bins, labels = [label_samp, label_dataset])
 
 
 def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = np.linspace(0, np.pi, 100), title = None, only_trajectories= True, max_width = 2, relative_error = True):
-    """ All tensor should be given as torch tensor of shape bs, ch, h, w, even for singular images"""
+    """ All tensor should be given as torch tensor of shape bs, ch, h, w, even for singular images""" ##TODO simplify with plot_ps i think. 
     raise NotImplementedError("This function is not working properly")
     _, b0, _ = power_spectrum_iso(baseline[0][0].cpu(),bins=bins)
     _, b2, _ = power_spectrum_iso(samples[0][0].detach().cpu(),bins=bins)
@@ -360,6 +474,7 @@ def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False):
         ## We have a power spectrum for each pairs of channels
         B, C,_, _, N = data_sp.shape
         assert data_sp.shape == (B, C, C, N, N) 
+        data_sp = data_sp.real ## Because we integrate over a circle on the fourrier plane, only real part is relevant (imag part cancels out, up to numerical errors)
         n_dim = 2
         wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1))
         wn_iso = torch.zeros(data_sp.shape)
@@ -399,7 +514,12 @@ def set_power_spectrum_iso2d(data, bins = np.linspace(0, np.pi, 100), only_stat 
     '''Data should have shape (N, C, H, W)'''
 
     _, power_spectra, _ = power_spectrum_iso2d(data, bins=bins)
-    mean, std = torch.mean(power_spectra,axis=0).reshape(-1), torch.std(power_spectra,axis=0).reshape(-1) ## Average over dim 0 (B dimension)
+    if power_spectra.ndim == 2:
+        mean, std = torch.mean(power_spectra,axis=0).reshape(-1), torch.std(power_spectra,axis=0).reshape(-1) ## Average over dim 0 (B dimension)
+    elif power_spectra.ndim == 3:
+        raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+    elif power_spectra.ndim == 4:
+        mean, std = torch.mean(power_spectra,axis=0), torch.std(power_spectra,axis=0)
     if only_stat:
         return mean, std, bins
     else:
