@@ -135,7 +135,6 @@ def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 50
 
     partial_batch = [elt.repeat(NUM_SAMPLES, 1, 1, 1) for elt in partial_batch]
     partial_batch = torch.cat(partial_batch, dim = 0)
-
     if tweedie:
         noisy_batch, batch_denoised = one_step_denoising(diffmodel, partial_batch, noise_step, is_observation = True)
     else:
@@ -149,7 +148,6 @@ def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 50
 
 def one_step_denoising(model, batch, t, is_observation = False):
     batch=batch.to(device)
-
     if not(is_observation):
         timesteps=torch.full((batch.shape[0],), t).long().to(device)
         noisy_batch, _, _ =model.sde.sampling(batch, timesteps)

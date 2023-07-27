@@ -14,7 +14,7 @@ This repository contains all the code related to a projet to use diffusions and 
 - [ ] add a verbose = reduced option for training
 - [X] ~verify how models are saved to the local MODELS.json~ My bad
 - [ ] Add continuous time models? Variance exploding? -> probably modify first the DiscreteSBM loss method.
-- [ ] Add likelihood computations (forward & reverse time?)
+- [ ] Add likelihood computations (forward time and reverse time ODE plus log like computing)
 - [ ] Multi power spectrum score based models.
 - [X] ~Integrate BM3D to allow an easy comparison~ In the demo separation notebook
 - [ ] Add a DDIM & an EMA option (DDRM, PIGDM...later)

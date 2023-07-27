@@ -111,6 +111,7 @@ class DiscreteSBM(DiffusionModel):
                         grad = torch.autograd.grad(reduced, gen, create_graph=True)[0]
                         gen.requires_grad = False
                         log_likelihood_increase += torch.sum(grad * epsilon, dim=(1, 2, 3))
+                        ## TODO add zero grad
                 log_likelihood_increase /= repeat
                 log_likelihood += log_likelihood_increase/(N-initial_timestep)
             progress_bar.close()
