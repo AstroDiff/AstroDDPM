@@ -10,19 +10,18 @@ This repository contains all the code related to a projet to use diffusions and 
 - [ ] decide how datasets are managed for the wider audience (@fi & outside) (and ckpts too)
 - [ ] develop fine-tune
 - [ ] solidify resume training
-- [ ] translate ~analysis tools~ & older separations tools
+- [X] ~translate analysis tools & older separations tools~
 - [ ] add a verbose = reduced option for training
 - [X] ~verify how models are saved to the local MODELS.json~ My bad
 - [ ] Add continuous time models? Variance exploding? -> probably modify first the DiscreteSBM loss method.
 - [ ] Add likelihood computations (forward & reverse time?)
 - [ ] Multi power spectrum score based models.
-- [ ] Integrate BM3D to allow an easy comparison
+- [X] ~Integrate BM3D to allow an easy comparison~ In the demo separation notebook
 - [ ] Add a DDIM & an EMA option (DDRM, PIGDM...later)
-- [ ] Complete requirements.txt with version
+- [X] ~Complete requirements.txt~ with version
 - [ ] Add the possibility of a validation set in addition of train/test set?
-- [ ] Manage location dependent links in setup.py
+- [X] ~Manage location dependent links in setup.py~ Don't think we need to.
 - [ ] Option for parallel training?
-- [ ] Option for cpu only inference
 - [ ] Logging on WandB or Tensorboard
 
 

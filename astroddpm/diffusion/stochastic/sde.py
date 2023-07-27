@@ -1,6 +1,5 @@
 """Abstract SDE classes, Reverse SDE, and VE/VP SDEs."""
 import abc
-from typing import Any
 import torch
 import numpy as np
 import os
@@ -46,6 +45,10 @@ class DiscreteSDE(abc.ABC):
         pass
     @abc.abstractmethod
     def prior_sampling(self, shape):
+        pass
+    @abc.abstractmethod
+    def ode_drift(self, x, t):
+        ## Used for the ODE solver as well as likelihood computations
         pass
     @abc.abstractmethod
     def prior_log_likelihood(self, z):

@@ -42,6 +42,9 @@ class DiscreteSBM(DiffusionModel):
     def step(self, model_output, timestep, sample):
         drift, brownian = self.sde.reverse(sample, timestep, model_output)
         return sample + drift + brownian
+    def ode_step(self, model_output, timestep, sample):
+        drift = self.sde.ode_drift(sample, timestep, model_output)
+        return sample - drift ## minus sine we go backward in time
     def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True):
         self.eval()
 
@@ -63,6 +66,28 @@ class DiscreteSBM(DiffusionModel):
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
+        return sample
+    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True): ## TODO scheduler ? 
+        self.eval()
+
+        channel, size = self.network.in_c, self.network.sizes[0]
+
+        if initial_timestep is None:
+            tot_steps = self.sde.N
+        else:
+            tot_steps = initial_timestep
+        with torch.no_grad():
+            timesteps = list(range(tot_steps))[::-1]
+            if sample is None:
+                sample = self.sde.prior_sampling((sample_size, channel, size, size))
+            progress_bar = tqdm.tqdm(total=tot_steps, disable=not verbose)
+            for t in timesteps:
+                time_tensor = (torch.ones(sample_size, 1) * t).long().to(device)
+                residual = self.network(sample, time_tensor)
+                sample = self.ode_step(residual, time_tensor[0], sample)
+                progress_bar.update(1)
+            progress_bar.close()
+
         return sample
         
 

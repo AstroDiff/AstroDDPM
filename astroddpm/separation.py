@@ -13,11 +13,11 @@ from torch.utils.data import DataLoader
 
 import tqdm
 
-from datahandler.dataset import NPDataset, get_dataset_and_dataloader
+from astroddpm.datahandler.dataset import NPDataset, get_dataset_and_dataloader
 
-from diffusion.dm import DiscreteSBM, DiffusionModel
-from diffusion.stochastic.sde import DiscreteSDE, DiscreteVPSDE, DiscreteSigmaVPSDE
-from diffusion.models.network import ResUNet
+from astroddpm.diffusion.dm import DiscreteSBM, DiffusionModel
+from astroddpm.diffusion.stochastic.sde import DiscreteSDE, DiscreteVPSDE, DiscreteSigmaVPSDE
+from astroddpm.diffusion.models.network import ResUNet
 
 from astroddpm.runners import Diffuser
 
@@ -85,9 +85,12 @@ def method1_algo2(model1, model2, observation, NUM_SAMPLES=32):
     return sample1, observation
 
 
-def check_separation1score(model_id, ckpt_dir = None, noise_step = 500, num_to_denoise = 1, NUM_SAMPLES = 16, tweedie = False):
+def check_separation1score(diffuser, ckpt_dir = None, noise_step = 500, num_to_denoise = 1, NUM_SAMPLES = 16, tweedie = False):
     '''This function is used to check the separation1score function on a subset of the test batch provided with the diffuser. It returns the truth, the noisy and the denoised batch for the first num_to_denoise images of the test dataset of the diffuser corresponding to model_id. If tweedie is True, the function uses the one_step_denoising function, otherwise it uses the multi_step_denoising function. If ckpt_dir is None, the function will look for the diffuser corresponding to model_id in the MODELS.json file. If ckpt_dir is provided, the function will look for the diffuser config file in the ckpt_dir folder.'''
-    diffuser = load_everything(model_id, ckpt_dir)
+    if isinstance(diffuser, str):
+        diffuser = load_everything(diffuser, ckpt_dir)
+    elif not isinstance(diffuser, Diffuser):
+        raise ValueError("The diffuser you provided is not a Diffuser object or a model_id. Please provide a Diffuser object or a model_id.")
     if not hasattr(diffuser, 'test_dataloader'):
         raise ValueError("The diffuser you loaded does not have a test dataloader. If you still want to use this function, you should provide a test dataloader to the diffuser or use manually one_step_denoising or multi_step_denoising with the diffusion model you want to use and the batch you want to denoise.")
     test_dataloader = diffuser.test_dataloader
@@ -117,9 +120,12 @@ def check_separation1score(model_id, ckpt_dir = None, noise_step = 500, num_to_d
     return truth_list, noisy_list, denoised_list
     
 
-def separation1score(MODEL_ID1, observation, CKPT_FOLDER1 = None, noise_step = 500, NUM_SAMPLES = 16, tweedie = False, rescale_observation = True):
+def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 500, NUM_SAMPLES = 16, tweedie = False, rescale_observation = True):
     '''This function is used to compute the separation1score of the diffuser corresponding to model_id1 on the observation provided. If tweedie is True, the function uses the one_step_denoising function, otherwise it uses the multi_step_denoising function. If ckpt_dir is None, the function will look for the diffuser corresponding to model_id in the MODELS.json file. If ckpt_dir is provided, the function will look for the diffuser config file in the ckpt_dir folder.'''
-    diffuser = load_everything(MODEL_ID1, CKPT_FOLDER1)
+    if isinstance(diffuser, str):
+        diffuser = load_everything(diffuser, CKPT_FOLDER1)
+    elif not isinstance(diffuser, Diffuser):
+        raise ValueError("The diffuser you provided is not a Diffuser object or a model_id. Please provide a Diffuser object or a model_id.")
     diffmodel = diffuser.diffmodel
     t = noise_step
     if rescale_observation:
@@ -165,6 +171,7 @@ def multi_step_denoising(model, batch, t, is_observation = False):
         timesteps=torch.full((batch.shape[0],), t).long().to(device)
         noisy_batch, _, _=model.sde.sampling(batch, timesteps)
     else:
+        timesteps=torch.full((batch.shape[0],), t).long().to(device)
         noisy_batch = batch
 
     batch_denoised = model.generate_image(noisy_batch.shape[0],sample=noisy_batch,initial_timestep=t)
