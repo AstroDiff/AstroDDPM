@@ -62,7 +62,7 @@ def plot_ps2d(bins, ps_list, labels=None, show=True, save_name=None,title=None, 
             plt.close(fig)
         return fig, ax
 
-def plot_set_power_spectrum_iso2d(data, bins = torch.linspace(0, np.pi, 100), title = None, show = True, save_name = None, elementary_figsize = (5, 5)):
+def plot_set_power_spectrum_iso2d(data, bins = torch.linspace(0, np.pi, 100).to(device), title = None, show = True, save_name = None, elementary_figsize = (5, 5)):
     mean_, std_ , bins = set_power_spectrum_iso2d(data.to(device), bins)
     bins_centers = (bins[:-1] + bins[1:])/2
     bins_centers = bins_centers.cpu()
@@ -109,7 +109,7 @@ def plot_set_power_spectrum_iso2d(data, bins = torch.linspace(0, np.pi, 100), ti
     return mean_, std_, bins
 
 
-def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 100), max_width = 3, labels = None, elementary_figsize = (5, 5), save_name = None, show = True, title= None):
+def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 100).to(device), max_width = 3, labels = None, elementary_figsize = (5, 5), save_name = None, show = True, title= None):
     ## Computations
     bins_centers = (bins[:-1] + bins[1:])/2
     bins_centers = bins_centers.cpu()
@@ -123,7 +123,7 @@ def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 10
     ndim = mean_list[0].ndim
     ## Figure
     n = len(data_list)
-    h , w = (n+max_width-1)//max_width, n%max_width
+    h , w = (n+max_width-1)//max_width, min(n, max_width)
 
     if n <= max_width:
         if n == 0:
@@ -165,6 +165,8 @@ def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 10
                                 axs[i][j].set_xscale('log')
                 else:
                     raise ValueError('power spectra should be 1D or 3D: 1D if only one channel, 3D if multiple channels because of the C x C cross spectrum')
+            for i in range(n, h*w):
+                subfigs[i].axis('off')
     else:
         fig = plt.figure(constrained_layout=True, figsize = (w*elementary_figsize[0] , h*elementary_figsize[1]))
         subfigs = fig.subfigures(nrows = h, ncols = w)
@@ -213,7 +215,7 @@ def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 10
  
     return mean_list, std_list, bins_centers, labels
 
-def plot_ps_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 128, savefig = None, bins = torch.linspace(0, np.pi, 100)):
+def plot_ps_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 128, savefig = None, bins = torch.linspace(0, np.pi, 100).to(device)):
     if samples is None:
         ## Get results from the sample_dir corresponding to the diffuser
         samples = torch.from_numpy(get_samples(diffuser))
@@ -608,7 +610,7 @@ def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False):
         data_sp = data_sp.real ## Because we integrate over a circle on the fourrier plane, only real part is relevant (imag part cancels out, up to numerical errors)
         n_dim = 2
         wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1))
-        wn_iso = torch.zeros(data_sp.shape)
+        wn_iso = torch.zeros(data_sp.shape).to(device)
         for i in range(n_dim):
             wn_iso += torch.moveaxis(wn, 0, i) ** 2
         wn_iso = torch.sqrt(wn_iso)

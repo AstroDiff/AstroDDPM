@@ -35,7 +35,7 @@ class DiscreteSBM(DiffusionModel):
         self.network = network
 
         self.config = { "sde" : self.sde.config, "network" : self.network.config, "type" : "DiscreteSBM"}
-    def loss(self, batch, timesteps): ## TODO chose if we add xnoise to the args or not
+    def loss(self, batch, timesteps):
         batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps)
         rescaled_noise_pred = self.network(batch_tilde, timesteps)
         return F.mse_loss(rescaled_noise_pred, rescaled_noise)
@@ -44,7 +44,7 @@ class DiscreteSBM(DiffusionModel):
         return sample + drift + brownian
     def ode_step(self, model_output, timestep, sample):
         drift = self.sde.ode_drift(sample, timestep, model_output)
-        return sample - drift ## minus sine we go backward in time
+        return sample + drift 
     def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True):
         self.eval()
 
@@ -89,6 +89,36 @@ class DiscreteSBM(DiffusionModel):
             progress_bar.close()
 
         return sample
+    
+    def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1):
+        '''Sample in forward time the ODE and compute the log likelihood of the batch, see [REF]'''
+        self.eval()
+        log_likelihood = torch.zeros(len(batch)).to(device)
+        with torch.no_grad():
+            N = self.sde.N
+            progress_bar = tqdm.tqdm(total=N, disable=not verbose)
+            for i in range(N):
+                timesteps = torch.tensor([i]).repeat(len(batch)).to(device)
+                modified_score = self.network(gen, timesteps)
+                gen -= self.sde.ode_drift(gen, timesteps, modified_score)
+                progress_bar.update(1)
+                log_likelihood_increase = 0
+                with torch.enable_grad():
+                    for _ in range(repeat):
+                        epsilon = torch.randn_like(batch)
+                        gen.requires_grad = True
+                        reduced = torch.sum(modified_score * epsilon)
+                        grad = torch.autograd.grad(reduced, gen, create_graph=True)[0]
+                        gen.requires_grad = False
+                        log_likelihood_increase += torch.sum(grad * epsilon, dim=(1, 2, 3))
+                log_likelihood_increase /= repeat
+                log_likelihood += log_likelihood_increase/(N-initial_timestep)
+            progress_bar.close()
+            log_likelihood += self.sde.prior_log_likelihood(batch)
+        self.train()
+        return log_likelihood
+
+        
         
 
 class ContinuousSBM(DiffusionModel):
