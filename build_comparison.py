@@ -29,15 +29,18 @@ class PowerSpectrumIso2d(nn.Module):
 
 
 
-def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path = 'default', num_to_denoise=-1, num_samples=1, noise_min=0.0, noise_max=1.0, num_levels=10, noise_interp='linear', methods='all', batch_size=-1, gpu_for_spectrum = False, parallel = False):
+def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path_ = 'default', num_to_denoise=-1, num_samples=1, noise_min=0.0, noise_max=1.0, num_levels=10, noise_interp='linear', methods='all', batch_size=-1, gpu_for_spectrum = False, parallel = False):
     ## Load the diffuser
     diffuser = load_everything(model_id, ckpt_folder)
 
-    if save_path.lower() == 'default':
-        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'comparison',model_id, 'comparison.pt')
+    if save_path_.lower() == 'default':
+        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'comparison',model_id,)
+    else:
+        save_path = save_path_
     ## Create the file where to save the comparison
-    if not os.path.isdir(os.path.dirname(save_path)):
+    if not os.path.isdir(save_path):
         os.makedirs(save_path)
+    save_path = os.path.join(save_path, 'comparison.pt')
     save_dict = {}
 
     ## Load the test set
@@ -75,12 +78,12 @@ def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path = '
         ps_computer = PowerSpectrumIso2d().to(device)
         if parallel:
             ps_computer = nn.DataParallel(ps_computer)
+    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+    diffuser.diffmodel.to(device)
 
     if 'sbm' in methods.lower() or methods=='all':
 
         signed_relative_error_sbm = torch.zeros((num_levels, len(bins)-1))
-        device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-        diffuser.diffmodel.to(device)
         if parallel:
             diffuser.diffmodel = nn.DataParallel(diffuser.diffmodel)
         for i, time in enumerate(times):
@@ -122,11 +125,11 @@ def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path = '
 
         signed_relative_error_bm3d = torch.zeros((len(times), len(bins)-1))
 
-        noise_level_cpu = noise_levels.cpu()
+        noise_level_cpu = noise_levels
         if isinstance(diffuser.diffmodel.sde, DiscreteVPSDE):
             power_spectrum = 1
         else:
-            power_spectrum = diffuser.diffmodel.sde.power_spectrum.detach.cpu().numpy()
+            power_spectrum = diffuser.diffmodel.sde.power_spectrum.detach().cpu().numpy()
 
         for i, time in enumerate(times[1:]):
 
@@ -140,21 +143,20 @@ def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path = '
                     if ps_true.ndim == 2:
                         ps_true = ps_true.reshape(-1)
                     testbatch = testbatch.repeat(num_samples, 1, 1, 1)
+                    timesteps = torch.full((testbatch.shape[0],), time).long().to(device)
                     observation , _, _ = diffuser.diffmodel.sde.sampling(testbatch, timesteps)
                     observation = diffuser.diffmodel.sde.rescale_preserved_to_additive(observation, timesteps)
                     denoised_bm3d = torch.zeros_like(observation)
                     for j in range(num_samples):
                         img = observation[j][0].cpu().numpy()
-
-                        denoised_bm3d = bm3d(img, sigma_psd = noise_level_cpu[i+1]*power_spectrum, stage_arg=BM3DStages.HARD_THRESHOLDING,)
-                        denoised_bm3d[j,0] = torch.from_numpy(denoised_bm3d).unsqueeze(0).unsqueeze(0).to(device)
+                        denoised_bm3d[j,0, :, :] = torch.from_numpy(bm3d(img, sigma_psd = noise_level_cpu[i+1]*power_spectrum, stage_arg=BM3DStages.HARD_THRESHOLDING,)).to(device)
                     if not gpu_for_spectrum:
                         _, ps_denoised, _= powerspectrum.power_spectrum_iso2d(denoised_bm3d, bins = bins, use_gpu=gpu_for_spectrum)
                     else:
                         ps_denoised = ps_computer(denoised_bm3d)
 
                     ps_denoised = ps_denoised.mean(dim=0,)
-                    signed_relative_error_bm3d[i+1] += ((ps_denoised.reshape(-1) - ps_true.reshape(-1)) / ps_true.reshape(-1))[:-1].cpu()
+                    signed_relative_error_bm3d[i+1] += ((ps_denoised.reshape(-1).cpu() - ps_true.reshape(-1).cpu()) / ps_true.reshape(-1).cpu())[:-1]
                     progress_bar.update(1)
                 signed_relative_error_bm3d[i+1] /= n
                 progress_bar.close()
