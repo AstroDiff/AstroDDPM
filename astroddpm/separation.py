@@ -120,7 +120,7 @@ def check_separation1score(diffuser, ckpt_dir = None, noise_step = 500, num_to_d
     return truth_list, noisy_list, denoised_list
     
 
-def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 500, NUM_SAMPLES = 16, tweedie = False, rescale_observation = True):
+def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 500, NUM_SAMPLES = 16, tweedie = False, rescale_observation = True, verbose = True):
     '''This function is used to compute the separation1score of the diffuser corresponding to model_id1 on the observation provided. If tweedie is True, the function uses the one_step_denoising function, otherwise it uses the multi_step_denoising function. If ckpt_dir is None, the function will look for the diffuser corresponding to model_id in the MODELS.json file. If ckpt_dir is provided, the function will look for the diffuser config file in the ckpt_dir folder.'''
     if isinstance(diffuser, str):
         diffuser = load_everything(diffuser, CKPT_FOLDER1)
@@ -138,7 +138,7 @@ def separation1score(diffuser, observation, CKPT_FOLDER1 = None, noise_step = 50
     if tweedie:
         noisy_batch, batch_denoised = one_step_denoising(diffmodel, partial_batch, noise_step, is_observation = True)
     else:
-        noisy_batch, batch_denoised = multi_step_denoising(diffmodel, partial_batch, noise_step, is_observation = True)
+        noisy_batch, batch_denoised = multi_step_denoising(diffmodel, partial_batch, noise_step, is_observation = True, verbose = verbose)
 
     noisy_list = torch.split(noisy_batch, NUM_SAMPLES, dim = 0)
     denoised_list = torch.split(batch_denoised, NUM_SAMPLES, dim=0)
@@ -163,7 +163,7 @@ def one_step_denoising(model, batch, t, is_observation = False):
 
     return rescaled_noisy_batch, batch_denoised
 
-def multi_step_denoising(model, batch, t, is_observation = False):
+def multi_step_denoising(model, batch, t, is_observation = False, verbose = True):
     batch = batch.to(device)
     if not(is_observation):
         timesteps=torch.full((batch.shape[0],), t).long().to(device)
@@ -172,7 +172,7 @@ def multi_step_denoising(model, batch, t, is_observation = False):
         timesteps=torch.full((batch.shape[0],), t).long().to(device)
         noisy_batch = batch
 
-    batch_denoised = model.generate_image(noisy_batch.shape[0],sample=noisy_batch,initial_timestep=t)
+    batch_denoised = model.generate_image(noisy_batch.shape[0],sample=noisy_batch,initial_timestep=t, verbose = verbose)
 
     rescaled_noisy_batch = model.sde.rescale_preserved_to_additive(noisy_batch, timesteps)
 

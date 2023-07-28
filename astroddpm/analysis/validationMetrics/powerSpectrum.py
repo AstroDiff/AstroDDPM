@@ -616,7 +616,7 @@ def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False, use_g
         assert data_sp.shape == (B, C, C, N, N) 
         data_sp = data_sp.real ## Because we integrate over a circle on the fourrier plane, only real part is relevant (imag part cancels out, up to numerical errors)
         n_dim = 2
-        wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1))
+        wn = (2 * np.pi * torch.fft.fftfreq(N, d=sampling)).reshape((N,) + (1,) * (n_dim - 1)).to(temp_device)
         wn_iso = torch.zeros(data_sp.shape).to(temp_device)
         for i in range(n_dim):
             wn_iso += torch.moveaxis(wn, 0, i) ** 2

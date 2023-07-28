@@ -8,8 +8,8 @@ sbatch <<EOF
 #SBATCH --partition=gpu
 #SBATCH -o log/${model_id}.log
 source ~/.bashrc
-conda activate FIexplore
-python train.py --model_id ${model_id} --ckpt_folder /mnt/home/dheurtel/AstroDDPM/config/exp1
+source /mnt/home/dheurtel/venv/genv_DL/bin/activate
+python train.py --model_id ${model_id} --ckpt_folder /mnt/home/dheurtel/AstroDDPM/config/exp1 --all_models
 EOF
     echo "Submitted ${model_id}"
 done

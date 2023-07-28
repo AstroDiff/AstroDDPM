@@ -272,6 +272,19 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
     def noise_level(self, t):
         return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def ode_drift(self, x, t, modified_score):
+        ## Used for the ODE solver as well as likelihood computations
+        if not self.ddpm_math:
+            raise NotImplementedError
+        else:
+            coef_epsilon = (1 - self.alphas) / self.sqrt_one_minus_alphas_cumprod
+            coef_eps_t = coef_epsilon[t].reshape(-1, 1, 1, 1)
+            coef_first = 1 / self.alphas**0.5
+            coef_first_t = coef_first[t].reshape(-1, 1, 1, 1)
+
+            drift = (coef_first_t - 1) * x - (1/2*coef_first_t*coef_eps_t)*modified_score
+            return drift
+
 
 class ContinuousSDE(abc.ABC):
     def __init__(self):
