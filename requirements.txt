@@ -17,3 +17,5 @@ scipy
 astropy
 PIL
 random
+
+git+https://github.com/patrick-kidger/torchcubicspline.git

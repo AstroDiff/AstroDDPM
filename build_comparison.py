@@ -131,7 +131,7 @@ def build_comparison(model_id, ckpt_folder = None, verbose = True, save_path_ = 
         else:
             power_spectrum = diffuser.diffmodel.sde.power_spectrum.detach().cpu().numpy()
 
-        for i, time in enumerate(times[1:]):
+        for i, time in enumerate(times):
 
             with torch.no_grad():
                 n = len(test_set)

@@ -247,12 +247,15 @@ def plot_ps_samples_dataset(diffuser, samples = None, title = None, max_num_samp
     return plot_sets_power_spectrum_iso2d([samples, datapoints], bins = bins, labels = [label_samp, label_dataset], use_gpu=use_gpu, title = title, save_name=save_name)
 
 
-def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch.linspace(0, np.pi, 100), title = None, only_trajectories= True, max_width = 1, relative_error = True, elementary_figsize = (5, 5), save_name = None, show = True, use_gpu = True):
+def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch.linspace(0, np.pi, 100), title = None, only_trajectories= True, max_width = 1, relative_error = True, elementary_figsize = (5, 5), save_name = None, show = True, use_gpu = True, true_ps = None):
     """ All tensor should be given as torch tensor of shape bs, ch, h, w, even for singular images""" ##TODO simplify with plot_ps i think. 
     temp_device = torch.device("cuda" if torch.cuda.is_available() and use_gpu else "cpu")
     #raise NotImplementedError("This function is not working properly")
-    _, b0, _ = power_spectrum_iso2d(baseline,bins=bins)
-    _, b3, _ = power_spectrum_iso2d(noisy[:1], bins=bins)
+    if true_ps is not None:
+        _, b0, _ = _spectral_iso2d(true_ps.to(temp_device), bins=bins.to(temp_device))
+    else:
+        _, b0, _ = power_spectrum_iso2d(baseline.to(temp_device),bins=bins.to(temp_device))
+    _, b3, _ = power_spectrum_iso2d(noisy[:1].to(temp_device), bins=bins)
     b0 = b0.reshape(-1)
     b3 = b3.reshape(-1)
     num_samples = len(samples)
@@ -267,44 +270,22 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
     w, h = elementary_figsize
 
     if not(relative_error):
-        # fig, ax = plt.subplots(1, 1,figsize=(10,10), layout='constrained')
-
-        # fig.supylabel('Isotropic Power')
-        # fig.supxlabel('Wavenumber')
-        # ax.plot(bins_centers,b3[:99],'g', label = 'Noisy')
-        # ax.plot(bins_centers,mean,'-k',label = 'Mean-denoised')
-        # ax.plot(bins_centers,b0[:99],'r',label = 'Truth')
-        # idx = np.random.randint(len(power_spectra))
-        # for i, ps in enumerate(power_spectra):
-        #     if i==idx:
-        #         linewidth = max_width 
-        #         ax.plot(bins_centers, ps[:99],'b',linewidth=linewidth)
-        #     else:
-        #         linewidth = 1/np.sqrt(num_samples)
-        #         ax.plot(bins_centers, ps[:99],linewidth=linewidth)
-
-        # ax.legend()
-        # ax.set_xscale('log')
-        # ax.set_yscale('log')
-
-        # if not(title is None):
-        #     ax.title.set_text(title)
         ndim = mean_.ndim
         shape = mean_.shape
         
         if ndim == 1:
-            fig, ax = plt.subplots(1, 1, figsize = elementary_figsize)
+            fig, ax = plt.subplots(1, 1, figsize = elementary_figsize, layout = 'constrained')
             ax.plot(bins_centers.cpu(), mean_[:-1].cpu(), '-k', label = 'Mean-denoised')
-            ax.plot(bins_centers.cpu(), b0[:-1].cpu(), 'r', label = 'Truth')
+            ax.plot(bins_centers.cpu(), b0[:-1].cpu(), 'b', label = 'Truth')
             ax.plot(bins_centers.cpu(), b3[:-1].cpu(), 'g', label = 'Noisy')
             idx = np.random.randint(len(power_spectra))
             for i, ps in enumerate(power_spectra):
                 if i==idx:
                     linewidth = max_width 
-                    ax.plot(bins_centers.cpu(), ps[:-1].cpu(), 'b', linewidth=linewidth)
+                    ax.plot(bins_centers.cpu(), ps[:-1].cpu(), 'r', linewidth=linewidth, label = 'Sample')
                 else:
-                    linewidth = 1/np.sqrt(num_samples)
-                    ax.plot(bins_centers.cpu(), ps[:-1].cpu(), linewidth=linewidth)
+                    linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                    ax.plot(bins_centers.cpu(), ps[:-1].cpu(),'r', linewidth=linewidth)
             ax.legend()
             ax.set_xscale('log')
             ax.set_yscale('log')
@@ -325,30 +306,30 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
                         axs[i,j].axis('off')
                     elif i == j:
                         axs.plot(bins_centers.cpu(), mean_[i,j,:-1].cpu(), '-k', label = 'Mean-denoised')
-                        axs.plot(bins_centers.cpu(), b0[i,j,:-1].cpu(), 'r', label = 'Truth')
+                        axs.plot(bins_centers.cpu(), b0[i,j,:-1].cpu(), 'b', label = 'Truth')
                         axs.plot(bins_centers.cpu(), b3[i,j,:-1].cpu(), 'g', label = 'Noisy')
                         for i, ps in enumerate(power_spectra):
                             if i==idx:
                                 linewidth = max_width 
-                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), 'b', linewidth=linewidth)
+                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), 'r', linewidth=linewidth,label = 'Sample')
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu(),'r',linewidth=linewidth)
                         axs.set_xscale('log')
                         axs.set_yscale('log')
                         axs.legend()
                     else:
                         normalization = torch.sqrt(mean_[i,i,:-1]*mean_[j,j,:-1]).cpu()
                         axs.plot(bins_centers.cpu(), mean_[i,j,:-1].cpu()/normalization, '-k', label = 'Mean-denoised')
-                        axs.plot(bins_centers.cpu(), b0[i,j,:-1].cpu()/normalization, 'r', label = 'Truth')
+                        axs.plot(bins_centers.cpu(), b0[i,j,:-1].cpu()/normalization, 'b', label = 'Truth')
                         axs.plot(bins_centers.cpu(), b3[i,j,:-1].cpu()/normalization, 'g', label = 'Noisy')
                         for i, ps in enumerate(power_spectra):
                             if i==idx:
                                 linewidth = max_width 
-                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, 'b', linewidth=linewidth)
+                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, 'r', linewidth=linewidth)
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                axs.plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization,'r', linewidth=linewidth)
             if not(title is None):
                 axs.title.set_text(title)
             if save_name is not None:
@@ -357,75 +338,41 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
                 fig.show(warn=False)
             
     else:
-        # fig, ax = plt.subplots(2, 1, figsize=(10,10),height_ratios=[2,1],sharex=True)
-        # fig.subplots_adjust(hspace=0)
-        # fig.supxlabel('Wavenumber')
-        # ax[0].plot(bins_centers,b3[:99],'g', label = 'Noisy')
-        # ax[0].plot(bins_centers,mean,'-k',label = 'Mean-denoised')
-        # ax[0].plot(bins_centers,b0[:99],'r',label = 'Truth')
-        # idx = np.random.randint(len(power_spectra))
-        # for i, ps in enumerate(power_spectra):
-        #     if i==idx:
-        #         linewidth = max_width 
-        #         ax[0].plot(bins_centers, ps[:99],'b',linewidth=linewidth)
-        #     else:
-        #         linewidth = 1/np.sqrt(num_samples)
-        #         ax[0].plot(bins_centers, ps[:99],linewidth=linewidth)
-
-        # ax[0].legend()
-        # ax[0].set_xscale('log')
-        # ax[0].set_yscale('log')
-        # ax[0].set_ylabel('Isotropic Power')
-
-        # ax[1].plot(bins_centers,bias[:99],'-k', label = 'PS estimator relative bias') ##Relative error of the mean of PS
-        # ax[1].plot(bins_centers,noisy_rel_err[:99],'-g', label = 'Noisy relative error')
-        # for i, rel in enumerate(rel_err):
-        #     if i==idx:
-        #         linewidth = max_width 
-        #         ax[1].plot(bins_centers, rel[:99],'b',linewidth=linewidth)
-        #     else:
-        #         linewidth = 1/np.sqrt(num_samples)
-        #         ax[1].plot(bins_centers, rel[:99],linewidth=linewidth)
-        # ax[1].legend()
-        # ax[1].set_xscale('log')
-        # ax[1].set_yscale('log') 
-
-        # ax[1].set_ylabel('Rel. Error')
         ndim = mean_.ndim
         shape = mean_.shape
         if ndim == 1:
             fig, axs = plt.subplots(2, 1, figsize = elementary_figsize, height_ratios=[2,1],sharex=True)
             fig.subplots_adjust(hspace=0)
-            fig.supxlabel('Wavenumber')
+            fig.supxlabel('Wavenumber', fontsize=16)
             axs[0].plot(bins_centers.cpu(), mean_[:-1].cpu(), '-k', label = 'Mean-denoised')
-            axs[0].plot(bins_centers.cpu(), b0[:-1].cpu(), 'r', label = 'Truth')
+            axs[0].plot(bins_centers.cpu(), b0[:-1].cpu(), 'b', label = 'Truth')
             axs[0].plot(bins_centers.cpu(), b3[:-1].cpu(), 'g', label = 'Noisy')
             idx = np.random.randint(len(power_spectra))
             for i, ps in enumerate(power_spectra):
                 if i==idx:
                     linewidth = max_width 
-                    axs[0].plot(bins_centers.cpu(), ps[:-1].cpu(), 'b', linewidth=linewidth)
+                    axs[0].plot(bins_centers.cpu(), ps[:-1].cpu(), 'r', linewidth=linewidth,label = 'Sample')
                 else:
-                    linewidth = 1/np.sqrt(num_samples)
-                    axs[0].plot(bins_centers.cpu(), ps[:-1].cpu(), linewidth=linewidth)
+                    linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                    axs[0].plot(bins_centers.cpu(), ps[:-1].cpu(), 'r', linewidth=linewidth)
             axs[0].legend()
             axs[0].set_xscale('log')
             axs[0].set_yscale('log')
-            axs[0].set_ylabel('Isotropic Power')
+            axs[0].set_ylabel('Isotropic Power', fontsize=16)
 
             axs[1].plot(bins_centers.cpu(), bias[:-1].cpu(), '-k', label = 'PS estimator relative bias') ##Relative error of the mean of PS
             axs[1].plot(bins_centers.cpu(), noisy_rel_err[:-1].cpu(), '-g', label = 'Noisy relative error')
             for i, rel in enumerate(rel_err):
                 if i==idx:
                     linewidth = max_width 
-                    axs[1].plot(bins_centers.cpu(), rel[:-1].cpu(), 'b', linewidth=linewidth)
+                    axs[1].plot(bins_centers.cpu(), rel[:-1].cpu(), 'r', linewidth=linewidth)
                 else:
-                    linewidth = 1/np.sqrt(num_samples)
-                    axs[1].plot(bins_centers.cpu(), rel[:-1].cpu(), linewidth=linewidth)
-            axs[1].legend()
+                    linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                    axs[1].plot(bins_centers.cpu(), rel[:-1].cpu(),'r', linewidth=linewidth)
+            #axs[1].legend()
             axs[1].set_xscale('log')
             axs[1].set_yscale('log')
-            axs[1].set_ylabel('Rel. Error')
+            axs[1].set_ylabel('Rel. Error', fontsize=16)
 
             if not(title is None):
                 axs[0].title.set_text(title)
@@ -448,30 +395,30 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
                         subaxs[i,j].axis('off')
                     elif i == j:
                         subaxs[i,j].plot(bins_centers.cpu(), mean_[i,j,:-1].cpu(), '-k', label = 'Mean-denoised')
-                        subaxs[i,j].plot(bins_centers.cpu(), b0[i,j,:-1].cpu(), 'r', label = 'Truth')
+                        subaxs[i,j].plot(bins_centers.cpu(), b0[i,j,:-1].cpu(), 'b', label = 'Truth')
                         subaxs[i,j].plot(bins_centers.cpu(), b3[i,j,:-1].cpu(), 'g', label = 'Noisy')
                         for ind, ps in enumerate(power_spectra):
                             if ind==idx:
                                 linewidth = max_width 
-                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), 'b', linewidth=linewidth)
+                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), 'r', linewidth=linewidth)
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu(), 'r',linewidth=linewidth)
                         subaxs[i,j].set_xscale('log')
                         subaxs[i,j].set_yscale('log')
                         subaxs[i,j].legend()
                     else:
                         normalization = torch.sqrt(mean_[i,i,:-1]*mean_[j,j,:-1]).cpu()
                         subaxs[i,j].plot(bins_centers.cpu(), mean_[i,j,:-1].cpu()/normalization, '-k', label = 'Mean-denoised')
-                        subaxs[i,j].plot(bins_centers.cpu(), b0[i,j,:-1].cpu()/normalization, 'r', label = 'Truth')
+                        subaxs[i,j].plot(bins_centers.cpu(), b0[i,j,:-1].cpu()/normalization, 'b', label = 'Truth')
                         subaxs[i,j].plot(bins_centers.cpu(), b3[i,j,:-1].cpu()/normalization, 'g', label = 'Noisy')
                         for ind, ps in enumerate(power_spectra):
                             if ind==idx:
                                 linewidth = max_width 
-                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, 'b', linewidth=linewidth)
+                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, 'r', linewidth=linewidth)
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization, linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                subaxs[i,j].plot(bins_centers.cpu(), ps[i,j,:-1].cpu()/normalization,'r' ,linewidth=linewidth)
                         subaxs[i,j].set_xscale('log')
                         subaxs[i,j].legend()
             axs[0].set_ylabel('Isotropic Power')
@@ -487,10 +434,10 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
                         for ind, rel in enumerate(rel_err):
                             if ind==idx:
                                 linewidth = max_width 
-                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'b', linewidth=linewidth)
+                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'r', linewidth=linewidth)
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'r',linewidth=linewidth)
                         subaxs[i,j].set_xscale('log')
                         subaxs[i,j].set_yscale('log')
                         subaxs[i,j].legend()
@@ -500,13 +447,13 @@ def compare_separation_power_spectrum_iso(baseline, samples, noisy, bins = torch
                         for ind, rel in enumerate(rel_err):
                             if ind==idx:
                                 linewidth = max_width 
-                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'b', linewidth=linewidth)
+                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'r', linewidth=linewidth)
                             else:
-                                linewidth = 1/np.sqrt(num_samples)
-                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), linewidth=linewidth)
+                                linewidth = 1/(np.sqrt(num_samples)*np.sqrt(2))
+                                subaxs[i,j].plot(bins_centers.cpu(), rel[i,j,:-1].cpu(), 'r',linewidth=linewidth)
 
                         subaxs[i,j].set_xscale('log')
-                        subaxs[i,j].legend()
+                        #subaxs[i,j].legend()
             axs[1].set_ylabel('Rel. Error')
 
             if not(title is None):
@@ -589,14 +536,14 @@ def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False, use_g
         wn_iso = torch.zeros(data_sp.shape).to(temp_device)
         for i in range(n_dim):
             wn_iso += torch.moveaxis(wn, 0, i) ** 2
-        wn_iso = torch.sqrt(wn_iso)
-        wn_iso = wn_iso.reshape(B, C, -1) ## C = 1
-        data_sp = data_sp.reshape(B, C, -1)
+        wn_iso = torch.sqrt(wn_iso).to(temp_device)
+        wn_iso = wn_iso.reshape(B, C, -1).to(temp_device) ## C = 1
+        data_sp = data_sp.reshape(B, C, -1).to(temp_device)
 
         if bins is None:
-            bins = torch.sort(torch.unique(wn_iso))[0]
+            bins = torch.sort(torch.unique(wn_iso))[0].to(temp_device)
         BINS = len(bins)
-        index = torch.bucketize(wn_iso, bins)
+        index = torch.bucketize(wn_iso, bins).to(temp_device)
         index_mask = F.one_hot(index, BINS+1).to(temp_device) ## we will discard the first bin
 
         counts = torch.sum(index_mask, dim=[1, 2])

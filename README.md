@@ -19,9 +19,8 @@ This repository contains all the code related to a projet to use diffusions and 
 - [X] ~Integrate BM3D to allow an easy comparison~ In the demo separation notebook
 - [ ] Add a DDIM & an EMA option (DDRM, PIGDM...later)
 - [X] ~Complete requirements.txt~ with version
-- [ ] Add the possibility of a validation set in addition of train/test set?
 - [X] ~Manage location dependent links in setup.py~ Don't think we need to.
-- [ ] Option for parallel training?
+- [ ] Option for parallel training? Test first the inference with torch.DataParallel
 - [ ] Logging on WandB or Tensorboard
 
 

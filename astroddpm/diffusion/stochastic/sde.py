@@ -79,8 +79,8 @@ class DiscreteVPSDE(DiscreteSDE):
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
 
-        self.t = torch.linspace(0, 1, N, dtype=torch.float32).to(device)
-        self.Beta = (beta_min * self.t + (beta_max - beta_min) * self.t**2) ## Primitive of beta(t) then discretized
+        self.t = torch.linspace(1/N, 1, N, dtype=torch.float32).to(device)
+        self.Beta = (beta_min * self.t + 1/2*(beta_max - beta_min) * self.t**2) ## Primitive of beta(t) then discretized
 
         self.ddpm_math = ddpm_math
 
@@ -104,16 +104,15 @@ class DiscreteVPSDE(DiscreteSDE):
         if not self.ddpm_math:
             mean = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)*x
             seed = torch.randn_like(x)
-            noise = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)*seed
-            x_tilde = mean + noise
+            x_tilde = mean + torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)*seed
             return x_tilde, mean, seed
         else:
             sqrt_alpha_barre_t = self.sqrt_alphas_cumprod[t]
             sqrt_one_minus_alpha_barre_t = self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)
             mean = sqrt_alpha_barre_t.reshape(-1, 1, 1, 1)*x
-            noise = sqrt_one_minus_alpha_barre_t*torch.randn_like(x)
-            x_tilde = mean + noise
-            return x_tilde, mean, noise/sqrt_one_minus_alpha_barre_t
+            seed = torch.randn_like(x)
+            x_tilde = mean + sqrt_one_minus_alpha_barre_t*seed
+            return x_tilde, mean, seed
 
     def reverse(self, x, t, modified_score):
         if not self.ddpm_math:
@@ -133,7 +132,9 @@ class DiscreteVPSDE(DiscreteSDE):
             return drift, brownian
     def tweedie_reverse(self, x, t, modified_score):
         if not self.ddpm_math:
-            raise NotImplementedError("Not yet implemented")
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            sq_expBt = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
+            return (x - sq_1_expB_t*modified_score)/sq_expBt
         else:
             s1 = self.sqrt_alphas_cumprod[t] # bs
             s2 = self.sqrt_one_minus_alphas_cumprod[t] # bs
@@ -158,8 +159,14 @@ class DiscreteVPSDE(DiscreteSDE):
     def prior_sampling(self, shape):
         return torch.randn(shape).to(device)
     def prior_log_likelihood(self, z):
-        raise NotImplementedError
-        return 0.0
+        shape = z.shape
+        ndim = z.ndim
+        if ndim == 2:
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
+        elif ndim == 3: ## Assumes it is a C, H, W image
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
+        elif ndim == 4: ## Assumes it is a B C, H, W image
+            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z**2, dim=[1, 2, 3])) ## +log(1)
     def rescale_additive_to_preserved(self, x, t):
         return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
     def rescale_preserved_to_additive(self, x, t):
@@ -181,8 +188,8 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
 
-        self.t = torch.linspace(0, 1, N, dtype=torch.float32).to(device)
-        self.Beta = (self.beta_0 * self.t + 1/2*(self.beta_T - self.beta_0) * self.t**2)
+        self.t = torch.linspace(1/N, 1, N, dtype=torch.float32).to(device)
+        self.Beta = (self.beta_min * self.t + 1/2*(self.beta_max - self.beta_min) * self.t**2)
 
         self.ddpm_math = ddpm_math
 
@@ -224,22 +231,22 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         ## Samples from the SDE at time t and returns x_tilde, the mean and the rescaled noise terms 
         if not self.ddpm_math:
             mean = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)*x
-            noise = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)*torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
-            x_tilde = mean + noise
-            return x_tilde, mean, noise
+            seed = torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
+            x_tilde = mean + torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)*seed
+            return x_tilde, mean, seed
         else:
             sqrt_alpha_barre_t = self.sqrt_alphas_cumprod[t]
             sqrt_one_minus_alpha_barre_t = self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)
             mean = sqrt_alpha_barre_t.reshape(-1, 1, 1, 1)*x
-            noise = sqrt_one_minus_alpha_barre_t*torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
-            x_tilde = mean + noise
-            return x_tilde, mean, noise/sqrt_one_minus_alpha_barre_t
+            seed = torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
+            x_tilde = mean + sqrt_one_minus_alpha_barre_t*seed
+            return x_tilde, mean, seed
     def reverse(self, x, t, modified_score):
         if not self.ddpm_math:
-            raise NotImplementedError
-            beta_t = self.betas[t]
-            drift = - (beta_t/2 ).reshape(-1, 1, 1, 1) * x - modified_score
-            brownian = torch.sqrt(beta_t).reshape(-1, 1, 1, 1)*torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
+            beta_t = self.betas[t].reshape(-1, 1, 1, 1)
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            drift = (beta_t/2 ) * x - (beta_t/sq_1_expB_t)*modified_score
+            brownian = torch.sqrt(beta_t)*torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
             return drift, brownian
         else:
             coef_epsilon = (1 - self.alphas) / self.sqrt_one_minus_alphas_cumprod
@@ -252,7 +259,9 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
             return drift, brownian
     def tweedie_reverse(self, x, t, modified_score):
         if not self.ddpm_math:
-            raise NotImplementedError("Not yet implemented")
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            sq_expBt = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
+            return (x - sq_1_expB_t*modified_score)/sq_expBt
         else:
             s1 = self.sqrt_alphas_cumprod[t] # bs
             s2 = self.sqrt_one_minus_alphas_cumprod[t] # bs
@@ -264,8 +273,14 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
     def prior_sampling(self, shape):
         return torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn(shape)).to(device)).real
     def prior_log_likelihood(self, z):
-        raise NotImplementedError ## TODO
-        return 0.0
+        shape = z.shape
+        ndim = len(shape)
+        if ndim == 2:
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z)).real )
+        elif ndim == 3:
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z)).real )
+        elif ndim == 4:
+            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z, dim=(1, 2,3))).real )
     def rescale_additive_to_preserved(self, x, t):
         return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
     def rescale_preserved_to_additive(self, x, t):
@@ -275,7 +290,10 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
     def ode_drift(self, x, t, modified_score):
         ## Used for the ODE solver as well as likelihood computations
         if not self.ddpm_math:
-            raise NotImplementedError
+            beta_t = self.betas[t].reshape(-1, 1, 1, 1)
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            drift = (beta_t/2 ) * x - 1/2*(beta_t/sq_1_expB_t)*modified_score
+            return drift
         else:
             coef_epsilon = (1 - self.alphas) / self.sqrt_one_minus_alphas_cumprod
             coef_eps_t = coef_epsilon[t].reshape(-1, 1, 1, 1)
@@ -325,14 +343,16 @@ class ContinuousSDE(abc.ABC):
         pass
 
 class ContinuousVPSDE(ContinuousSDE):
-    def __init__(self, beta_min = 0.1, beta_max = 20.0):
+    def __init__(self, beta_min = 0.1, beta_max = 20.0, t_min = 1e-4, t_max = 1.0):
         super(ContinuousVPSDE, self).__init__()
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.beta_0 = max(1e-4, beta_min)
         self.beta_T = beta_max
-        self.beta = lambda t: (self.beta_0 + (self.beta_T - self.beta_0) * t)
-        self.Beta = lambda t: (self.beta_0 * t + 1/2*(self.beta_T - self.beta_0) * t**2)
+        self.tmin = t_min
+        self.tmax = t_max
+        self.beta = lambda t: ( (self.beta_T - self.beta_0) * t)
+        self.Beta = lambda t: ( 1/2*(self.beta_T - self.beta_0) * t**2)
 
         self.config = {'type' : 'ContinuousVPSDE', 'beta_min':self.beta_min, 'beta_max':self.beta_max}
 
@@ -345,36 +365,52 @@ class ContinuousVPSDE(ContinuousSDE):
     
     def sampling(self, x, t):
         ## Samples from the SDE at time t and returns x_tilde, the mean and the rescaled noise terms
-        mean = torch.exp(-self.Beta(t)/2)*x
+        Beta_t = self.Beta(t).reshape(-1, 1, 1, 1)
+        mean = torch.exp(-Beta_t/2)*x
         seed = torch.randn_like(x)
-        noise = torch.sqrt(1 - torch.exp(-self.Beta(t)))*seed
+        noise = torch.sqrt(1 - torch.exp(-Beta_t))*seed
         x_tilde = mean + noise
         return x_tilde, mean, seed
 
     def reverse(self, x, t, modified_score):
-        raise NotImplementedError
-        beta_t = self.beta(t)
-        drift = - (beta_t/2) * x - modified_score
-        brownian = torch.sqrt(beta_t)*torch.randn_like(x)
+        beta_t = self.betas(t).reshape(-1, 1, 1, 1)
+        sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta(t))).reshape(-1, 1, 1, 1)
+        drift = (beta_t/2 ) * x - (beta_t/sq_1_expB_t)*modified_score 
+        brownian = torch.sqrt(beta_t).reshape(-1, 1, 1, 1)*torch.randn_like(x)
         return drift, brownian
+
     def tweedie_reverse(self, x, t, modified_score):
-        raise NotImplementedError
+        t = torch.clamp(t, self.tmin, self.tmax)
+        Beta_t = self.Beta(t).reshape(-1, 1, 1, 1)
+        sq_1_expB_t = torch.sqrt(1 - torch.exp(-Beta_t))
+        sq_expBt = torch.exp(-Beta_t/2)
+        return (x - sq_1_expB_t*modified_score)/sq_expBt
+
     def ode_drift(self, x, t, modified_score):
-        raise NotImplementedError
-        ## Used for the ODE solver as well as likelihood computations
-        beta_t = self.beta(t)
-        drift = - (beta_t/2) * x - (beta_t/2)*modified_score
+        beta_t = self.betas(t).reshape(-1, 1, 1, 1)
+        sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta(t))).reshape(-1, 1, 1, 1)
+        drift = (beta_t/2 ) * x - (1/2 * beta_t/sq_1_expB_t)*modified_score 
         return drift
-    
+
     def prior_sampling(self, shape):
         return torch.randn(shape)
+
     def prior_log_likelihood(self, z):
-        raise NotImplementedError
-        return 0.0
+        shape = z.shape
+        ndim = z.ndim
+        if ndim == 2:
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
+        elif ndim == 3: ## Assumes it is a C, H, W image
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2))
+        elif ndim == 4: ## Assumes it is a B C, H, W image
+            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z**2, dim=[1, 2, 3]))
+
     def rescale_additive_to_preserved(self, x, t):
         return x * torch.exp(-self.Beta(t)/2)
+
     def rescale_preserved_to_additive(self, x, t):
         return x / torch.exp(-self.Beta(t)/2)
+
     def noise_level(self, t):
         return torch.sqrt(1 - torch.exp(-self.Beta(t)))/torch.exp(-self.Beta(t)/2)
     
@@ -451,8 +487,7 @@ class ContinuousSigmaVPSDE(ContinuousSDE): ## TODO change default ps
         return torch.sqrt(1 - torch.exp(-self.Beta(t)))/torch.exp(-self.Beta(t)/2)
 
 
-
-def get_sde(config):
+def get_sde(config): ## TODO factorize the code
     """Returns an SDE object from a config dictionary."""
     sto_diff_eq = None
     if "type" not in config.keys():
@@ -479,6 +514,16 @@ def get_sde(config):
         if "power_spectrum_name" not in config.keys():
             config["power_spectrum_name"] = "cmb_256_8arcmippixel"
         sto_diff_eq = DiscreteSigmaVPSDE(beta_min=config["beta_min"], beta_max=config["beta_max"], N=config["N"], ddpm_math=config["ddpm_math"], power_spectrum=config["power_spectrum_name"])
+    elif config["type"].lower() == "continuousvpsde":
+        if "beta_min" not in config.keys():
+            config["beta_min"] = 0.1
+        if "beta_max" not in config.keys():
+            config["beta_max"] = 20
+        if 't_max' not in config.keys():
+            config['t_max'] = 1.0
+        if "t_min" not in config.keys():
+            config["t_min"] = 1e-4
+        sto_diff_eq = ContinuousVPSDE(beta_min=config["beta_min"], beta_max=config["beta_max"], t_min=config["t_min"], t_max=config["t_max"])
     if sto_diff_eq is None:
         warnings.warn("There was a problem with the SDE config, using default DiscreteVPSDE")
         sto_diff_eq = DiscreteVPSDE()

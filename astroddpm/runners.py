@@ -15,6 +15,7 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 import warnings
 import tqdm
+import time
 
 from astroddpm.datahandler.dataset import get_dataset_and_dataloader
 from astroddpm.diffusion import dm
@@ -576,6 +577,7 @@ class Diffuser(nn.Module):
         finetune, resume_training, ckpting, sampling, verbose, save_all_models, separate_ckpt = self.train_parser(**kwargs)
 
         if save_all_models:
+            time.sleep(np.random.randint(0,600)/10) ## to avoid overwriting the same file if multiple models are trained at the same time
             self.save(all_models = True)
         else:
             self.save()
@@ -598,10 +600,7 @@ class Diffuser(nn.Module):
                 else:
                     batch=batch.to(device)
 
-                timesteps = (
-                    torch.randint(0, num_timesteps, (batch.shape[0],)).long().to(device)
-                )
-                loss = self.diffmodel.loss(batch, timesteps)
+                loss = self.diffmodel.loss(batch)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -626,10 +625,7 @@ class Diffuser(nn.Module):
                         else:
                             test_loss_batch = test_loss_batch.to(device)
                         batch = test_loss_batch.to(device)
-                        timesteps = (
-                            torch.randint(0, num_timesteps, (batch.shape[0],)).long().to(device)
-                        )
-                        loss += self.diffmodel.loss(batch, timesteps).detach().cpu().item()*len(test_loss_batch)
+                        loss += self.diffmodel.loss(batch).detach().cpu().item()*len(test_loss_batch)
                         tot_len += len(test_loss_batch)
 
                 self.test_losses.append(loss/tot_len)

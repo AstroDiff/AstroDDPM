@@ -45,18 +45,16 @@ class NormConv2d(nn.Module):
 def make_te(dim_in, dim_out):
     return nn.Sequential(nn.Linear(dim_in, dim_out), nn.SiLU(), nn.Linear(dim_out, dim_out))
 
+def gaussian_fourier_embedding(d, sigma=0.1):
+    ## Returns the random Fourier features embedding matrix
+    embedding = torch.randn(d) * sigma * 2 * np.pi
+    return embedding
 
-## TODO make that clearer and smarter
-def normalization_parameters(normalisation, length):
-    if normalisation == "LN":
-        return (length * ["LN"], length * ["LN"], "LN")
-    if normalisation == "BN":
-        return length * ["BN"], (length - 1) * ["BN"], "BN"
-    if normalisation == "GN" or normalisation == "default":
-        return length * ["GN"], (length - 1) * ["GN"], "GN"
-    if normalisation == "None":
-        return length * [None], (length - 1) * [None], None
-
+class SineCosine(nn.Module):
+    def __init__(self,):
+        super(SineCosine, self).__init__()
+    def forward(self, x):
+        return torch.cat([torch.sin(x), torch.cos(x)], dim=-1)
 
 #####################################
 
@@ -147,16 +145,18 @@ class MidResBlock(nn.Module):
 
 class ResUNet(nn.Module):
     def __init__(self, in_c=1, out_c=1, first_c=10, sizes=[256, 128, 64, 32], num_blocks=1, n_steps=1000, time_emb_dim=100, 
-        dropout=0, attention=[], normalisation="default", padding_mode="circular", eps_norm=1e-5, skiprescale=False,
+        dropout=0, attention=[], normalisation="default", padding_mode="circular", eps_norm=1e-5, skiprescale=False, discretization = "discrete", embedding_mode = None
     ):
         super(ResUNet, self).__init__()
         ## TODO add attention
-        ## TODO change that
-        norm_down, norm_up, norm_tail = normalization_parameters(
-            normalisation, len(sizes) * num_blocks
-        )
+
+        if normalisation == "default":
+            normalisation = "GN"
+        if discretization == "continuous" and embedding_mode is None:
+            embedding_mode = "fourier"
         self.config = { "in_c": in_c, "out_c": out_c, "first_c": first_c, "sizes": sizes, "num_blocks": num_blocks, "n_steps": n_steps, "time_emb_dim": time_emb_dim,
-        "dropout": dropout, "attention": attention, "normalisation": normalisation, "padding_mode": padding_mode, "eps_norm": eps_norm, "skiprescale": skiprescale, "type" : "ResUNet", }
+        "dropout": dropout, "attention": attention, "normalisation": normalisation, "padding_mode": padding_mode, "eps_norm": eps_norm, "skiprescale": skiprescale, "type" : "ResUNet", 
+        "discretization": discretization, "embedding_mode": embedding_mode}
 
         self.normalisation = normalisation
         self.in_c = in_c
@@ -170,19 +170,31 @@ class ResUNet(nn.Module):
         self.attention = attention
         self.padding_mode = padding_mode
         self.eps_norm = eps_norm
-        
-        # Sinusoidal embedding
+        self.discretiation = discretization
+        self.embedding_mode = embedding_mode
 
-        self.time_embed = nn.Embedding(n_steps, time_emb_dim)
-        self.time_embed.weight.data = sinusoidal_embedding(n_steps, time_emb_dim)
-        self.time_embed.requires_grad_(False)
+        
+        # Time embedding
+        if discretization == "discrete" or discretization == "default":
+            self.time_embed = nn.Embedding(n_steps, time_emb_dim)
+            self.time_embed.weight.data = sinusoidal_embedding(n_steps, time_emb_dim)
+            self.time_embed.requires_grad_(False)
+        
+        elif discretization == "continuous":
+            if embedding_mode == "fourier":
+                assert time_emb_dim % 2 == 0, "time_emb_dim must be even for fourier embedding"
+                linear1 = nn.Linear(1, time_emb_dim//2)
+                linear1.weight.data = gaussian_fourier_embedding(time_emb_dim//2).unsqueeze(1)
+                linear1.bias.data = torch.zeros(time_emb_dim//2)
+                self.time_embed = nn.Sequential(linear1, SineCosine())
+                self.time_embed.requires_grad_(False)
+            elif embedding_mode == "forward":
+                self.time_embed = nn.Linear(1, time_emb_dim)
+            
 
         # First Half
 
         curr_c = in_c
-        if normalisation == "DN":
-            self.head = nn.Conv2d(in_c, 4, kernel_size=3, stride=1, padding_mode=padding_mode, padding="same",)
-            curr_c = 4
         ## Blocks with downsample
         self.downblocks = nn.ModuleList()
 
@@ -193,33 +205,20 @@ class ResUNet(nn.Module):
                 if i == tot_groups - 1 and j == num_blocks - 1:
                     block_out_c = curr_c
                     self.downblocks.append(
-                        MidResBlock(size,curr_c,time_emb_dim=time_emb_dim,normalize=norm_down[i * num_blocks + j],
+                        MidResBlock(size,curr_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                         group_c=first_c // 2,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
                     pass
                 elif i == 0 and j == 0:
                     block_out_c = first_c
-                    if normalisation == "DN":
-                        self.downblocks.append(
-                            DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=norm_down[i * num_blocks + j],
-                            group_c=1,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
-                        )
-                    elif normalisation == "GN":
-                        self.downblocks.append(
-                            DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=norm_down[i * num_blocks + j],
-                            group_c=1,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
-                        )
-                        self.downblocks[-1].block[1].norm = nn.GroupNorm(2, first_c)
-                        self.downblocks[-1].block[2].norm = nn.GroupNorm(2, first_c)
-                    else:
-                        self.downblocks.append(
-                            DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=norm_down[i * num_blocks + j],
+                    self.downblocks.append(
+                            DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                             padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
-                        )
+                    )
                 else:
                     block_out_c = 2 * curr_c
                     self.downblocks.append(
-                        DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=norm_down[i * num_blocks + j],
+                        DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                         group_c=first_c // 2,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
                 curr_c = block_out_c
@@ -242,21 +241,21 @@ class ResUNet(nn.Module):
             for j in range(num_blocks):
                 if i == len(sizes) - 2 and j == num_blocks - 1:
                     self.upblocks.append(
-                        DownResBlock(size * 2,2 * curr_c,out_c=curr_c,normalize=norm_up[i * num_blocks + j],group_c=first_c // 2,
+                        DownResBlock(size * 2,2 * curr_c,out_c=curr_c,normalize=normalisation,group_c=first_c // 2,
                         padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
                 else:
                     self.upblocks.append(
-                        UpResBlock(size * 2,2 * curr_c,time_emb_dim,normalize=norm_up[i * num_blocks + j],group_c=first_c // 2,
+                        UpResBlock(size * 2,2 * curr_c,time_emb_dim,normalize=normalisation,group_c=first_c // 2,
                         padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
                     curr_c = curr_c // 2
 
-        if norm_tail == None:
+        if normalisation == None:
             norm_l = nn.Identity()
-        elif norm_tail == "BN":
+        elif normalisation == "BN":
             norm_l = nn.BatchNorm2d(out_c, eps=eps_norm)
-        elif norm_tail == "LN":
+        elif normalisation == "LN":
             norm_l = nn.LayerNorm(
                 (out_c, sizes[0], sizes[0]), elementwise_affine=False, eps=eps_norm
             )
@@ -273,8 +272,6 @@ class ResUNet(nn.Module):
         t = self.time_embed(t)
         h = x
 
-        if self.normalisation == "DN":
-            h = self.head(x)
         h_list = [h]
 
         for block in self.downblocks:
@@ -332,6 +329,10 @@ def get_network(config): ## TODO add more networks, TODO be careful when I will 
             config["eps_norm"] = 1e-5
         if "skiprescale" not in config.keys():
             config["skiprescale"] = True
+        if "discretization" not in config.keys():
+            config["discretization"] = "discrete"
+        if "embedding_mode" not in config.keys():
+            config["embedding_mode"] = None
         return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"],)
     else:
         raise NotImplementedError(f"Network type {config['type']} not implemented")
