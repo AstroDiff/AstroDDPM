@@ -103,27 +103,23 @@ class DiscreteSBM(DiffusionModel):
         gen = batch
         lls = []
         gen.requires_grad = True
-        for i in range(initial_timestep, N): ## TODO create a function for this increase and compile it? for readability (because now it is not clear what is happening for an external user)
-            
+        for i in range(initial_timestep, N):
             timesteps = torch.tensor([i]).repeat(len(gen)).to(device)
             modified_score = self.network(gen, timesteps)
             drift = - self.sde.ode_drift(gen, timesteps, modified_score)
-            drift = torch.split(drift, 1, dim=0)
-            drift = [drift_k.repeat(repeat, 1, 1, 1) for drift_k in drift]
-            drift = torch.cat(drift, dim=0)
-            epsilon = torch.randn_like(drift)
-            reduced = torch.sum(drift * epsilon)
-            reduced = torch.autograd.grad(reduced, gen, retain_graph= False)[0]  ## TODO check if create_graph is needed (and also if we cannot use the torch default additive gradients)
-            epsilon = epsilon.split(repeat,0)
-            epsilon = [epsilon_k.sum(dim = 0, keepdim = True) for epsilon_k in epsilon]
-            epsilon = torch.cat(epsilon, dim=0)
-            reduced = torch.sum(reduced * epsilon, dim=(1, 2, 3))
-            drift = drift[::repeat]
-            ## TODO add zero grad
-            #gen.grad.zero_()
+
+            log_likelihood_increase = 0
+            for j in range(repeat): ## Vmaping that would be nice but not possible as of now and what I can do (potentional vmaps are actually slower because of the need to recompute stuff)
+                epsilon = torch.randn_like(gen)
+                reduced = torch.sum(drift * epsilon)
+                grad = torch.autograd.grad(reduced, gen, retain_graph= (j!=repeat-1))[0]  ## TODO check if create_graph is needed (and also if we cannot use the torch default additive gradients)
+                log_likelihood_increase += torch.sum(grad * epsilon, dim=(1, 2, 3))
+                ## TODO add zero grad
+                #gen.grad.zero_()
             gen = gen + drift
-            log_likelihood += reduced/repeat
-            lls.append(reduced/repeat)
+            log_likelihood_increase /= repeat
+            log_likelihood += log_likelihood_increase
+            lls.append(log_likelihood_increase)
             progress_bar.update(1)
         progress_bar.close()
         pre_prior_ll = log_likelihood.clone()
