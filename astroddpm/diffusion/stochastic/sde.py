@@ -5,11 +5,7 @@ import numpy as np
 import os
 import warnings
 
-######################
-## TODO put a disclaimer that it is Yang Song's code
-######################
-
-## TODO: add a link to the paper
+## TODO: add a link to Yang Song's paper, code and to our papers
 ## We have made the following changes to the code/score formula:
 ## 1. The output of the network will be - Sigma^2 score instead of score
 ##      This allow easier implementation of the loss and reverse SDE...
@@ -71,7 +67,7 @@ class DiscreteVPSDE(DiscreteSDE):
         super(DiscreteVPSDE, self).__init__(N)
         self.beta_min = beta_min
         self.beta_max = beta_max
-        self.beta_0 = max(1e-4, beta_min/N)
+        self.beta_0 = beta_min/N
         self.beta_T = beta_max/N
         self.betas = torch.linspace(self.beta_0, self.beta_T, N, dtype=torch.float32).to(device)
         self.alphas = 1 - self.betas
@@ -158,19 +154,23 @@ class DiscreteVPSDE(DiscreteSDE):
 
     def prior_sampling(self, shape):
         return torch.randn(shape).to(device)
+
     def prior_log_likelihood(self, z):
         shape = z.shape
         ndim = z.ndim
         if ndim == 2:
-            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
+            return -1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
         elif ndim == 3: ## Assumes it is a C, H, W image
-            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
+            return -1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z**2)) ## +log(1)
         elif ndim == 4: ## Assumes it is a B C, H, W image
-            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z**2, dim=[1, 2, 3])) ## +log(1)
+            return -1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z**2, dim=[1, 2, 3])) ## +log(1)
+
     def rescale_additive_to_preserved(self, x, t):
         return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
     def rescale_preserved_to_additive(self, x, t):
         return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
     def noise_level(self, t):
         return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
 
@@ -180,7 +180,7 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         super(DiscreteSigmaVPSDE, self).__init__(N)
         self.beta_min = beta_min
         self.beta_max = beta_max
-        self.beta_0 = max(1e-4, beta_min/N)
+        self.beta_0 = beta_min/N
         self.beta_T = beta_max/N
         self.betas = torch.linspace(self.beta_0, self.beta_T, N, dtype=torch.float32).to(device)
         self.alphas = 1 - self.betas
@@ -241,6 +241,7 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
             seed = torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real
             x_tilde = mean + sqrt_one_minus_alpha_barre_t*seed
             return x_tilde, mean, seed
+        
     def reverse(self, x, t, modified_score):
         if not self.ddpm_math:
             beta_t = self.betas[t].reshape(-1, 1, 1, 1)
@@ -257,6 +258,7 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
             drift = (coef_first_t - 1) * x - (coef_first_t*coef_eps_t)*modified_score
             brownian = (self.betas[t] ** 0.5).reshape(-1, 1, 1, 1) * torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn_like(x))).real*(t > 0).reshape(-1, 1, 1, 1)
             return drift, brownian
+
     def tweedie_reverse(self, x, t, modified_score):
         if not self.ddpm_math:
             sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
@@ -270,23 +272,118 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
 
             batch_denoised= (x- s2* modified_score)/s1
             return batch_denoised
+
     def prior_sampling(self, shape):
         return torch.fft.ifft2(self.sqrt_ps*torch.fft.fft2(torch.randn(shape)).to(device)).real
+
     def prior_log_likelihood(self, z):
         shape = z.shape
         ndim = len(shape)
         if ndim == 2:
-            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z)).real )
+            return -1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z*torch.fft.ifft2(self.power_spectrum**-1 * torch.fft.fft2(z)).real) + torch.sum(torch.log(self.power_spectrum)))
         elif ndim == 3:
-            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z)).real )
+            return -1/2*(z.numel()*np.log(2*np.pi) + torch.sum(z*torch.fft.ifft2(self.power_spectrum**-1 * torch.fft.fft2(z)).real) + torch.sum(torch.log(self.power_spectrum))) ## Assuming independent channels (zero cross spectra)
         elif ndim == 4:
-            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(self.power_spectrum*torch.fft.fft2(z, dim=(1, 2,3))).real )
+            return -1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z*torch.fft.ifft2(self.power_spectrum**-1 * torch.fft.fft2(z)).real, dim=(1, 2,3)) + torch.sum(torch.log(self.power_spectrum)))
+
     def rescale_additive_to_preserved(self, x, t):
         return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
     def rescale_preserved_to_additive(self, x, t):
         return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
     def noise_level(self, t):
         return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+
+    def ode_drift(self, x, t, modified_score):
+        ## Used for the ODE solver as well as likelihood computations
+        if not self.ddpm_math:
+            beta_t = self.betas[t].reshape(-1, 1, 1, 1)
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            drift = (beta_t/2 ) * x - 1/2*(beta_t/sq_1_expB_t)*modified_score
+            return drift
+        else:
+            coef_epsilon = (1 - self.alphas) / self.sqrt_one_minus_alphas_cumprod
+            coef_eps_t = coef_epsilon[t].reshape(-1, 1, 1, 1)
+            coef_first = 1 / self.alphas**0.5
+            coef_first_t = coef_first[t].reshape(-1, 1, 1, 1)
+            drift = (coef_first_t - 1) * x - (1/2*coef_first_t*coef_eps_t)*modified_score
+            return drift
+
+class DiscreteAllSigmaVPSDE(DiscreteSDE):
+    def __init__(self, N = 1000, beta_min = 0.1, beta_max = 20.0, ddpm_math = True):
+        super(DiscreteAllSigmaVPSDE, self).__init__()
+        self.beta_min = beta_min
+        self.beta_max = beta_max
+        self.beta_0 = beta_min/N
+        self.beta_T = beta_max/N
+        self.betas = torch.linspace(self.beta_0, self.beta_T, N, dtype=torch.float32).to(device)
+        self.alphas = 1 - self.betas
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
+
+        ## For non DDPM math.
+        self.t = torch.linspace(1/N, 1, N, dtype=torch.float32).to(device)
+        self.Beta = (self.beta_min * self.t + 1/2*(self.beta_max - self.beta_min) * self.t**2)
+
+        self.ddpm_math = ddpm_math
+        self.config = {'type' : 'DiscreteAllSigmaVPSDE', 'beta_min':self.beta_min, 'beta_max':self.beta_max, 'N':self.N, 'ddpm_math':self.ddpm_math}
+
+    def foward(self, x_t, t, sq_ps):
+        ## Returns the drift and brownian term of the SDE
+        if not self.ddpm_math:
+            beta_t = self.betas[t].reshape(-1, 1, 1, 1)
+            drift = (beta_t/2 ) * x_t
+            brownian = torch.sqrt(beta_t) * torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn(x_t.shape)).to(device)).real
+            return drift, brownian
+        else:
+            beta_t = self.betas[t]
+            drift = (1 - torch.sqrt(1-beta_t)).reshape(-1, 1, 1, 1)*x_t
+            brownian = torch.sqrt(beta_t).reshape(-1, 1, 1, 1)*torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn_like(x_t))).real
+            return drift, brownian
+    def sampling(self, x, t, sq_ps):
+        if not self.ddpm_math:
+            mean = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)*x
+            seed = torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn_like(x))).real
+            x_tilde = mean + torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)*seed
+            return x_tilde, mean, seed
+        else:
+            sqrt_alpha_barre_t = self.sqrt_alphas_cumprod[t]
+            sqrt_one_minus_alpha_barre_t = self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+            mean = sqrt_alpha_barre_t.reshape(-1, 1, 1, 1)*x
+            seed = torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn_like(x))).real
+            x_tilde = mean + sqrt_one_minus_alpha_barre_t*seed
+            return x_tilde, mean, seed
+    def reverse(self, x, t, modified_score, sq_ps):
+        if not self.ddpm_math:
+            beta_t = self.betas[t].reshape(-1, 1, 1, 1)
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            drift = (beta_t/2 ) * x - 1/2*(beta_t/sq_1_expB_t)*modified_score
+            brownian = torch.sqrt(beta_t) * torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn(x.shape)).to(device)).real
+            return drift, brownian
+        else:
+            coef_epsilon = (1 - self.alphas) / self.sqrt_one_minus_alphas_cumprod
+            coef_eps_t = coef_epsilon[t].reshape(-1, 1, 1, 1)
+            coef_first = 1 / self.alphas**0.5
+            coef_first_t = coef_first[t].reshape(-1, 1, 1, 1)
+
+            drift = (coef_first_t - 1) * x - (1/2*coef_first_t*coef_eps_t)*modified_score
+            brownian = torch.sqrt(beta_t).reshape(-1, 1, 1, 1)*torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn_like(x))).real
+            return drift, brownian
+    def tweedie_reverse(self, x, t, modified_score): ## TODO use heritage on this whole .py file. There has to be a way to factorize this.
+        if not self.ddpm_math:
+            sq_1_expB_t = torch.sqrt(1 - torch.exp(-self.Beta[t])).reshape(-1, 1, 1, 1)
+            sq_expBt = torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
+            return (x - sq_1_expB_t*modified_score)/sq_expBt
+        else:
+            s1 = self.sqrt_alphas_cumprod[t] # bs
+            s2 = self.sqrt_one_minus_alphas_cumprod[t] # bs
+            s1 = s1.reshape(-1,1,1,1) # (bs, 1, 1, 1) for broadcasting
+            s2 = s2.reshape(-1,1,1,1) # (bs, 1, 1, 1)
+
+            batch_denoised= (x- s2* modified_score)/s1
+            return batch_denoised
     def ode_drift(self, x, t, modified_score):
         ## Used for the ODE solver as well as likelihood computations
         if not self.ddpm_math:
@@ -302,6 +399,25 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
 
             drift = (coef_first_t - 1) * x - (1/2*coef_first_t*coef_eps_t)*modified_score
             return drift
+    def prior_sampling(self, shape, sq_ps):
+        return torch.fft.ifft2(sq_ps*torch.fft.fft2(torch.randn(shape))).real
+    def prior_log_likelihood(self, z, ps):
+        raise NotImplementedError()
+        shape = z.shape
+        ndim = len(shape)
+        if ndim == 2:
+            return 1/2*(z.numel()*np.log(2*np.pi) + torch.sum(ps*torch.fft.fft2(z)).real )
+        elif ndim == 3:
+            raise NotImplementedError("Not implemented for 3D multichannel likelihood computations are a pain if there is cross spectrum in the noise at time T")
+        elif ndim == 4:
+            return 1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(ps*torch.fft.fft2(z), dim=(1, 2,3)).real )
+    def rescale_additive_to_preserved(self, x, t):
+        return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def rescale_preserved_to_additive(self, x, t):
+        return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+    def noise_level(self, t):
+        return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+        
 
 
 class ContinuousSDE(abc.ABC):
@@ -343,18 +459,16 @@ class ContinuousSDE(abc.ABC):
         pass
 
 class ContinuousVPSDE(ContinuousSDE):
-    def __init__(self, beta_min = 0.1, beta_max = 20.0, t_min = 1e-4, t_max = 1.0):
+    def __init__(self, beta_min = 0.1, beta_max = 20.0, t_min = 1e-4):
         super(ContinuousVPSDE, self).__init__()
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.beta_0 = max(1e-4, beta_min)
+        self.beta_0 = beta_min
         self.beta_T = beta_max
         self.tmin = t_min
-        self.tmax = t_max
+        self.tmax = 1.0
         self.beta = lambda t: ( (self.beta_T - self.beta_0) * t)
         self.Beta = lambda t: ( 1/2*(self.beta_T - self.beta_0) * t**2)
 
-        self.config = {'type' : 'ContinuousVPSDE', 'beta_min':self.beta_min, 'beta_max':self.beta_max}
+        self.config = {'type' : 'ContinuousVPSDE', 'beta_min':beta_min, 'beta_max':beta_max}
 
     def foward(self, x_t, t):
         ## Returns the drift and brownian term of the SDE
@@ -417,9 +531,7 @@ class ContinuousVPSDE(ContinuousSDE):
 class ContinuousSigmaVPSDE(ContinuousSDE): ## TODO change default ps
     def __init__(self, power_spectrum = 'cmb', beta_min = 0.1, beta_max = 20.0):
         super(ContinuousSigmaVPSDE, self).__init__()
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.beta_0 = max(1e-4, beta_min)
+        self.beta_0 = beta_min
         self.beta_T = beta_max
         self.beta = lambda t: (self.beta_0 + (self.beta_T - self.beta_0) * t)
         self.Beta = lambda t: (self.beta_0 * t + 1/2*(self.beta_T - self.beta_0) * t**2)
@@ -443,7 +555,7 @@ class ContinuousSigmaVPSDE(ContinuousSDE): ## TODO change default ps
              - a numpy array or a torch tensor -> the power spectrum itself (cross spectrum not implemented)''')
         self.sqrt_ps = torch.sqrt(self.power_spectrum)
 
-        self.config = {'type' : 'ContinuousSigmaVPSDE', 'power_spectrum_name':self.power_spectrum_name, 'beta_min':self.beta_min, 'beta_max':self.beta_max}
+        self.config = {'type' : 'ContinuousSigmaVPSDE', 'power_spectrum_name':self.power_spectrum_name, 'beta_min':beta_min, 'beta_max':beta_max}
 
     def foward(self, x_t, t):
         ## Returns the drift and brownian term of the SDE

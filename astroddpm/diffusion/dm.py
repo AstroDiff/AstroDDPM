@@ -34,24 +34,25 @@ class DiscreteSBM(DiffusionModel):
         self.sde = sde
         self.network = network
         self.N = self.sde.N
-
         self.config = { "sde" : self.sde.config, "network" : self.network.config, "type" : "DiscreteSBM"}
+
     def loss(self, batch):
         timesteps = (torch.randint(0, self.N, (batch.shape[0],)).long().to(device))
         batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps)
         rescaled_noise_pred = self.network(batch_tilde, timesteps)
         return F.mse_loss(rescaled_noise_pred, rescaled_noise)
+
     def step(self, model_output, timestep, sample):
         drift, brownian = self.sde.reverse(sample, timestep, model_output)
         return sample + drift + brownian
+
     def ode_step(self, model_output, timestep, sample):
         drift = self.sde.ode_drift(sample, timestep, model_output)
         return sample + drift 
+
     def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True):
         self.eval()
-
         channel, size = self.network.in_c, self.network.sizes[0]
-        
         if initial_timestep is None:
             tot_steps = self.sde.N
         else:
@@ -69,10 +70,11 @@ class DiscreteSBM(DiffusionModel):
             progress_bar.close()
         self.train()
         return sample
-    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True): ## TODO scheduler maybe only in continuous time? 
+
+    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True): 
+        ## TODO scheduler maybe only in continuous time? Or at least offer option to use RK (which would mean jumping over a few steps because we are already discretized)
         self.eval()
         channel, size = self.network.in_c, self.network.sizes[0]
-
         if initial_timestep is None:
             tot_steps = self.sde.N
         else:
@@ -88,37 +90,46 @@ class DiscreteSBM(DiffusionModel):
                 sample = self.ode_step(residual, time_tensor[0], sample)
                 progress_bar.update(1)
             progress_bar.close()
-
         return sample
     
     def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1):
         '''Sample in forward time the ODE and compute the log likelihood of the batch, see [REF]'''
         self.eval()
+        if initial_timestep is None:
+            initial_timestep = 0
         log_likelihood = torch.zeros(len(batch)).to(device)
-        with torch.no_grad():
-            N = self.sde.N
-            progress_bar = tqdm.tqdm(total=N, disable=not verbose)
-            for i in range(N):
-                timesteps = torch.tensor([i]).repeat(len(batch)).to(device)
-                modified_score = self.network(gen, timesteps)
-                gen -= self.sde.ode_drift(gen, timesteps, modified_score)
-                progress_bar.update(1)
-                log_likelihood_increase = 0
-                with torch.enable_grad():
-                    for _ in range(repeat):
-                        epsilon = torch.randn_like(batch)
-                        gen.requires_grad = True
-                        reduced = torch.sum(modified_score * epsilon)
-                        grad = torch.autograd.grad(reduced, gen, create_graph=True)[0]
-                        gen.requires_grad = False
-                        log_likelihood_increase += torch.sum(grad * epsilon, dim=(1, 2, 3))
-                        ## TODO add zero grad
-                log_likelihood_increase /= repeat
-                log_likelihood += log_likelihood_increase/(N-initial_timestep)
-            progress_bar.close()
-            log_likelihood += self.sde.prior_log_likelihood(batch)
+        N = self.sde.N
+        progress_bar = tqdm.tqdm(total=N, disable=not verbose)
+        gen = batch
+        lls = []
+        gen.requires_grad = True
+        for i in range(initial_timestep, N): ## TODO create a function for this increase and compile it? for readability (because now it is not clear what is happening for an external user)
+            
+            timesteps = torch.tensor([i]).repeat(len(gen)).to(device)
+            modified_score = self.network(gen, timesteps)
+            drift = - self.sde.ode_drift(gen, timesteps, modified_score)
+            drift = torch.split(drift, 1, dim=0)
+            drift = [drift_k.repeat(repeat, 1, 1, 1) for drift_k in drift]
+            drift = torch.cat(drift, dim=0)
+            epsilon = torch.randn_like(drift)
+            reduced = torch.sum(drift * epsilon)
+            reduced = torch.autograd.grad(reduced, gen, retain_graph= False)[0]  ## TODO check if create_graph is needed (and also if we cannot use the torch default additive gradients)
+            epsilon = epsilon.split(repeat,0)
+            epsilon = [epsilon_k.sum(dim = 0, keepdim = True) for epsilon_k in epsilon]
+            epsilon = torch.cat(epsilon, dim=0)
+            reduced = torch.sum(reduced * epsilon, dim=(1, 2, 3))
+            drift = drift[::repeat]
+            ## TODO add zero grad
+            #gen.grad.zero_()
+            gen = gen + drift
+            log_likelihood += reduced/repeat
+            lls.append(reduced/repeat)
+            progress_bar.update(1)
+        progress_bar.close()
+        pre_prior_ll = log_likelihood.clone()
+        log_likelihood += self.sde.prior_log_likelihood(gen)
         self.train()
-        return log_likelihood
+        return log_likelihood, pre_prior_ll, lls, gen
 
 class ContinuousSBM(DiffusionModel):
     def __init__(self, sde, network):
