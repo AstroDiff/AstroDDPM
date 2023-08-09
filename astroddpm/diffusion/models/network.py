@@ -202,20 +202,20 @@ class ResUNet(nn.Module):
 
         for i, size in enumerate(sizes):
             for j in range(num_blocks):
-                if i == tot_groups - 1 and j == num_blocks - 1:
+                if i == tot_groups - 1 and j == num_blocks - 1: ## If last block of last group
                     block_out_c = curr_c
                     self.downblocks.append(
                         MidResBlock(size,curr_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                         group_c=first_c // 2,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
                     pass
-                elif i == 0 and j == 0:
+                elif i == 0 and j == 0: ## If first block of first group
                     block_out_c = first_c
                     self.downblocks.append(
                             DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                             padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,)
                     )
-                else:
+                else: ## If any other block
                     block_out_c = 2 * curr_c
                     self.downblocks.append(
                         DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
@@ -223,7 +223,7 @@ class ResUNet(nn.Module):
                     )
                 curr_c = block_out_c
 
-            if i != tot_groups - 1:
+            if i != tot_groups - 1: ## If not last group & at the end of the group, add a downsampling layer
                 self.downblocks.append(
                     nn.Conv2d(curr_c, curr_c, kernel_size=4, stride=2, padding=1)
                 )

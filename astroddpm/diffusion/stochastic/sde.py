@@ -196,7 +196,7 @@ class DiscreteSigmaVPSDE(DiscreteSDE):
         if type(power_spectrum)==str:
             self.power_spectrum_name = power_spectrum
             try:
-                folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),'power_spectra')
+                folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'power_spectra','fixed_power_spectra')
                 self.power_spectrum = torch.from_numpy(np.load(os.path.join(folder, power_spectrum + '.npy'))).to(device).type(torch.float32)
             except:
                 raise ValueError('Power spectrum not recognized')
