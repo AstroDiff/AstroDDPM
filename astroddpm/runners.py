@@ -16,6 +16,7 @@ from torchvision.utils import save_image
 import warnings
 import tqdm
 import time
+from filelock import FileLock
 
 from astroddpm.datahandler.dataset import get_dataset_and_dataloader
 from astroddpm.diffusion import dm
@@ -356,11 +357,15 @@ class Diffuser(nn.Module):
         if new_model_id is not None:
             config["model_id"] = new_model_id
         if all_models:
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'config' ,"MODELS.json")) as f:
-                total_models = json.load(f)
-            total_models[config["model_id"]] = config
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', "MODELS.json"), 'w') as f:
-                json.dump(total_models, f,indent=4)
+            filename = os.path.join(os.path.dirname(os.path.abspath(__file__)),'config' ,"MODELS.json")
+            lock_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)),'config' ,"MODELS.lock")
+            lock = FileLock(lock_filename)
+            with lock:
+                with open(filename) as f:
+                    total_models = json.load(f)
+                total_models[config["model_id"]] = config
+                with open(filename, 'w') as f:
+                    json.dump(total_models, f,indent=4)
         if hasattr(self, "ckpt_dir") and hasattr(self, "model_id"):
             ## Create the dir if needed:
             if not os.path.isdir(os.path.join(self.ckpt_dir, self.model_id)):
@@ -577,7 +582,6 @@ class Diffuser(nn.Module):
         finetune, resume_training, ckpting, sampling, verbose, save_all_models, separate_ckpt = self.train_parser(**kwargs)
 
         if save_all_models:
-            time.sleep(np.random.randint(0,600)/10) ## to avoid overwriting the same file if multiple models are trained at the same time
             self.save(all_models = True)
         else:
             self.save()
@@ -615,7 +619,7 @@ class Diffuser(nn.Module):
             progress_bar.close()
 
             if not (self.test_dataloader is None):
-                self.diffmodel.eval()
+                #self.diffmodel.eval()
                 with torch.no_grad():
                     loss = 0
                     tot_len = 0
@@ -629,7 +633,7 @@ class Diffuser(nn.Module):
                         tot_len += len(test_loss_batch)
 
                 self.test_losses.append(loss/tot_len)
-                self.diffmodel.train()
+                #self.diffmodel.train()
             if ckpting and (self.epoch % self.ckpt_epoch == 0):
                 if separate_ckpt:
                     try:
