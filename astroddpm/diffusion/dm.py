@@ -173,13 +173,13 @@ class DiscreteSBM(DiffusionModel):
         else:
             if self.has_thetas:
                 if thetas is None:
-                    ps, thetas = self.ps.sample_ps(sample_size)
+                    ps, thetas = self.ps.sample_ps(batch.shape[0])
                     sq_ps = torch.sqrt(ps)
                 else:
                     ps = self.ps(thetas)
                     sq_ps = torch.sqrt(ps)
             else:
-                ps = self.ps.sample_ps(sample_size)
+                ps = self.ps.sample_ps(batch.shape[0])
                 sq_ps = torch.sqrt(ps)
         
         if initial_timestep is None:
@@ -187,7 +187,7 @@ class DiscreteSBM(DiffusionModel):
         N = self.sde.N
         progress_bar = tqdm.tqdm(total=(N-initial_timestep), disable=not verbose)
 
-        log_likelihood = torch.zeros(len(batch)).to(device)
+        log_likelihood = torch.zeros(batch.shape[0]).to(device)
         gen = batch
         lls = []
 
