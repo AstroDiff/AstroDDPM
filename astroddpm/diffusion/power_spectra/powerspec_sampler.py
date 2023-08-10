@@ -1,4 +1,7 @@
 import torch 
+import torch.nn as nn
+import torch.nn.functional as F
+import torchcubicspline
 import os
 import numpy as np
 import warnings
@@ -6,8 +9,38 @@ import warnings
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def constant_ps_sampler(ps_path):
-    return torch.from_numpy(np.load(ps_path, allow_pickle=True)).to(device).type(torch.float32)
+class ConstantPs(nn.Module):
+    def __init__(self, ps_path):
+        super(ConstantPs, self).__init__()
+        self.ps = torch.from_numpy(np.load(ps_path, allow_pickle=True)).to(device).type(torch.float32)
+        if len(self.ps.shape) == 2:
+            self.ps = self.ps.unsqueeze(0).unsqueeze(0)
+        elif len(self.ps.shape) == 3:
+            self.ps = self.ps.unsqueeze(0)
+        self.ps = self.ps.to(device)
+        self.has_thetas = False
+        self.config = {'type': 'constant', 'ps_path': ps_path}
+    def forward(self):
+        return self.ps
+    def sample_ps(self, n_samples):
+        return self.ps.repeat(n_samples, 1, 1, 1)
+    
+
+class ConstantPsFromTensor(nn.Module):
+    def __init__(self, ps):
+        super(ConstantPsFromTensor, self).__init__()
+        self.ps = ps
+        if len(self.ps.shape) == 2:
+            self.ps = self.ps.unsqueeze(0).unsqueeze(0)
+        elif len(self.ps.shape) == 3:
+            self.ps = self.ps.unsqueeze(0)
+        self.ps = self.ps.to(device)
+        self.has_thetas = False
+        self.config = {'type': 'constant', 'nature' : 'custom'}
+    def forward(self):
+        return self.ps
+    def sample_ps(self, n_samples):
+        return self.ps.repeat(n_samples, 1, 1, 1)
 
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, n_hidden_layers=1):
@@ -31,7 +64,7 @@ class MLP(nn.Module):
         return x
 
 class CMB_H_OMBH2(nn.Module):
-    def __init__(self, ps_path):
+    def __init__(self):
         super(CMB_H_OMBH2, self).__init__()
 
         CKPT_FOLDER = '/mnt/home/dheurtel/ceph/02_checkpoints/SIGMA_EMULATOR'
@@ -40,22 +73,30 @@ class CMB_H_OMBH2(nn.Module):
 
         self.emulator = MLP(2, 100, 128, 2).to(device)
         self.emulator.load_state_dict(ckpt['network'])
-
+        for param in self.emulator.parameters():
+            param.requires_grad = False
         wn = (256*np.fft.fftfreq(256, d=1.0)).reshape((256,) + (1,) * (2 - 1))
         wn_iso = np.zeros((256,256))
         for i in range(2):
             wn_iso += np.moveaxis(wn, 0, i) ** 2
+        wn_iso = np.sqrt(wn_iso)
         indices = np.fft.fftshift(wn_iso).diagonal()[128:] ## The value of the wavenumbers along which we have the power spectrum diagonal
 
-        self.torch_wn_iso = torch.tensor(np.sqrt(wn_iso), dtype=torch.float32).to(device)
+        self.torch_wn_iso = torch.tensor(wn_iso, dtype=torch.float32).to(device)
         self.torch_indices = torch.tensor(indices).to(device)
+        self.has_thetas = True
+
+        self.config = {'type': 'cmb_h_ombh2'}
+    
+    def rescale_theta(self, theta):
+        return (theta - torch.tensor([70, 32e-3]).to(device))/torch.tensor([20,25e-3]).to(device)
 
     def forward(self, theta):
-        theta = rescale_theta(theta) ## Shape (batch_size, 2) (H0, ombh2) are the 2 cosmological parameters
-        torch_diagonals = emulator(theta) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
-        torch_diagonals = torch_diagonals.reshape((128, -1)) ## Shape (128, batch_size) to be able to use torchcubicspline
+        theta = self.rescale_theta(theta) ## Shape (batch_size, 2) (H0, ombh2) are the 2 cosmological parameters
+        torch_diagonals = self.emulator(theta) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
+        torch_diagonals = torch.moveaxis(torch_diagonals, -1, 0) ## Shape (128, batch_size) to be able to use torchcubicspline
         spline = torchcubicspline.NaturalCubicSpline(torchcubicspline.natural_cubic_spline_coeffs(self.torch_indices, torch_diagonals))
-        return torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)
+        return torch.exp(torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)).unsqueeze(1).type(torch.float32)/12734 ## Normalization factor to have a power spectrum of order 1
 
     def sample_theta(self, n_samples):
         return torch.tensor([40, 49.2e-3])*torch.rand(n_samples, 2) + torch.tensor([50, 7.5e-3])
@@ -72,7 +113,7 @@ def get_ps_sampler(config):
     elif 'type' in config.keys():
         if config['type'].lower() == 'constant':
             if 'ps_path' in config.keys():
-                return constant_ps_sampler(config['ps_path'])
+                return ConstantPs(config['ps_path'])
             else:
                 warnings.warn('No ps_path provided for constant power spectrum sampler. Returning None.')
                 return None

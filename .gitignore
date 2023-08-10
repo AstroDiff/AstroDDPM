@@ -10,5 +10,6 @@ comparison*
 *.png
 images
 toy*
+dev*
 
 *copy.py
