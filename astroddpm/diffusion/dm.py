@@ -9,7 +9,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from . import stochastic
 from . import models
-from . import power_spectra
+from .power_spectra import powerspec_sampler
 
 ## TODO add __repr__ to all models
 ## TODO add DDIM
@@ -42,6 +42,8 @@ class DiscreteSBM(DiffusionModel):
         self.ps = ps
         if ps is not None:
             self.has_thetas = self.ps.has_thetas
+        else:
+            self.has_thetas = False
         self.config = { "sde" : self.sde.config, "network" : self.network.config, "type" : "DiscreteSBM"}
         if ps is None:
             self.config["ps"] = {}
@@ -167,6 +169,7 @@ class DiscreteSBM(DiffusionModel):
         ## Get the power spectrum of the noise
         if self.ps is None:
             sq_ps = None
+            ps = None
         else:
             if self.has_thetas:
                 if thetas is None:
@@ -176,7 +179,8 @@ class DiscreteSBM(DiffusionModel):
                     ps = self.ps(thetas)
                     sq_ps = torch.sqrt(ps)
             else:
-                sq_ps = self.ps.sample_ps(sample_size)
+                ps = self.ps.sample_ps(sample_size)
+                sq_ps = torch.sqrt(ps)
         
         if initial_timestep is None:
             initial_timestep = 0
@@ -214,7 +218,7 @@ class DiscreteSBM(DiffusionModel):
 
         progress_bar.close()
         pre_prior_ll = log_likelihood.clone()
-        log_likelihood += self.sde.prior_log_likelihood(gen, sq_ps = sq_ps)
+        log_likelihood += self.sde.prior_log_likelihood(gen, ps = ps)
         self.train()
         return log_likelihood, pre_prior_ll, lls, gen
 
@@ -354,7 +358,7 @@ def get_diffusion_model(config):
         config["ps"] = {}
     ps_config = config["ps"]
 
-    ps_sampler = power_spectra.get_ps_sampler(ps_config)
+    ps_sampler = powerspec_sampler.get_ps_sampler(ps_config)
 
     if "type" not in config.keys():
         config["type"] = "DiscreteSBM"
