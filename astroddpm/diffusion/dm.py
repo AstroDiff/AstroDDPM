@@ -59,6 +59,7 @@ class DiscreteSBM(DiffusionModel):
             if self.has_thetas:
                 ps_tensor, thetas = self.ps.sample_ps(batch.shape[0])
                 batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
+                thetas = ps.rescale_thetas(thetas)
                 rescaled_noise_pred = self.network(batch_tilde, timesteps, thetas)
             else:
                 ps_tensor = self.ps.sample_ps(batch.shape[0])
@@ -84,9 +85,11 @@ class DiscreteSBM(DiffusionModel):
                 if thetas is None:
                     ps, thetas = self.ps.sample_ps(sample_size).to(device)
                     sq_ps = torch.sqrt(ps).to(device)
+                    thetas = ps.rescale_thetas(thetas)
                 else:
                     ps = self.ps(thetas).to(device)
                     sq_ps = torch.sqrt(ps).to(device)
+                    thetas = ps.rescale_thetas(thetas)
             else:
                 sq_ps = self.ps.sample_ps(sample_size).to(device)
 
@@ -130,9 +133,11 @@ class DiscreteSBM(DiffusionModel):
                 if thetas is None:
                     ps, thetas = self.ps.sample_ps(sample_size)
                     sq_ps = torch.sqrt(ps)
+                    thetas = ps.rescale_thetas(thetas)
                 else:
                     ps = self.ps(thetas)
                     sq_ps = torch.sqrt(ps)
+                    thetas = ps.rescale_thetas(thetas)
             else:
                 sq_ps = self.ps.sample_ps(sample_size)
         
@@ -175,9 +180,11 @@ class DiscreteSBM(DiffusionModel):
                 if thetas is None:
                     ps, thetas = self.ps.sample_ps(batch.shape[0])
                     sq_ps = torch.sqrt(ps)
+                    thetas = ps.rescale_thetas(thetas)
                 else:
                     ps = self.ps(thetas)
                     sq_ps = torch.sqrt(ps)
+                    thetas = ps.rescale_thetas(thetas)
             else:
                 ps = self.ps.sample_ps(batch.shape[0])
                 sq_ps = torch.sqrt(ps)

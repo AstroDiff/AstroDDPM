@@ -56,10 +56,10 @@ if __name__ == "__main__":
         ## argparse first
     parser = argparse.ArgumentParser(description='Train a diffuser')
     parser.add_argument('--model_id', type=str, default='DiffuserForget', help='model id')
-    parser.add_argument('--ckpt_folder', type=str, default=None, help='ckpt folder')
+    parser.add_argument('--config_folder', type=str, default=None, help='config folder')
     parser.add_argument('--all_models', type=str, default=None, help='config file')
     parser.add_argument('--finetune', type=bool, default=False, help='finetune')
-    parser.add_argument('--finetune_ckpt_path', type=str, default=None, help='finetune ckpt path')
+    parser.add_argument('--finetune_ckpt_path', type=str, default=None, help='finetune cskpt path')
     parser.add_argument('--resume_training', type=bool, default=False, help='resume training')
     parser.add_argument('--verbose', type=str, default="Reduced", help='verbose')
 
