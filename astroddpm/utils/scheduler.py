@@ -40,6 +40,7 @@ class InverseSquareRootScheduler:
         else:
             self.current_step=last_step
         self.minlr=minlr
+        self.config = {'type' : 'invsqrt', 'warmup' : warmup, 'maxlr' : maxlr, 'minlr' : minlr, 'last_step' : last_step}
     def step(self):
         self.current_step+=1
         if self.current_step<=self.warmup:
@@ -68,6 +69,7 @@ class InversePowerLawScheduler:
             self.current_step=0
         else:
             self.current_step=last_step
+        self.config = {'type' : 'invpower', 'warmup' : warmup, 'maxlr' : maxlr, 'minlr' : minlr, 'last_step' : last_step, 'power' : power}
     def step(self):
         self.current_step+=1
         if self.current_step<=self.warmup:
@@ -96,6 +98,7 @@ class CosineAnnealingScheduler:
             self.current_step=last_step
         self.minlr=minlr
         self.maxstep=maxstep
+        self.config = {'type' : 'cosine', 'warmup' : warmup, 'maxlr' : maxlr, 'minlr' : minlr, 'last_step' : last_step, 'maxstep' : maxstep}
     def step(self):
         self.current_step+=1
         if self.current_step<=self.warmup:
@@ -123,6 +126,7 @@ class LinearScheduler:
             self.current_step=last_step
         self.minlr=minlr
         self.maxstep=maxstep
+        self.config = {'type' : 'linear', 'warmup' : warmup, 'maxlr' : maxlr, 'minlr' : minlr, 'last_step' : last_step, 'maxstep' : maxstep}
     def step(self):
         self.current_step+=1
         if self.current_step<=self.warmup:
@@ -150,6 +154,7 @@ class StepScheduler:
             self.current_step=last_step
         self.step_period=step_period
         self.minlr=minlr
+        self.config = {'type' : 'step', 'warmup' : warmup, 'maxlr' : maxlr, 'minlr' : minlr, 'last_step' : last_step, 'step_period' : step_period}
     def step(self):
         self.current_step+=1
         if self.current_step<=self.warmup:
@@ -236,6 +241,4 @@ def get_optimizer_and_scheduler(config, params):
     else:
         raise ValueError("Scheduler {} not implemented. Chose one from linear, cosine, invsqrt".format(scheduler_config["type"]))
     optimizer.config = optimizer_config
-    if scheduler is not None:
-        scheduler.config = stable_config
     return optimizer, scheduler

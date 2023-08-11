@@ -9,7 +9,7 @@ sbatch <<EOF
 #SBATCH -o /mnt/home/dheurtel/astroddpm/astroddpm/log/${model_id}.log
 source ~/.bashrc
 source /mnt/home/dheurtel/venv/genv_DL/bin/activate
-python train.py --model_id ${model_id} --ckpt_folder /mnt/home/dheurtel/astroddpm/astroddpm/config/exp3 --all_models True
+python train.py --model_id ${model_id} --config_folder /mnt/home/dheurtel/astroddpm/astroddpm/config/exp3 --all_models True
 EOF
     echo "Submitted ${model_id}"
 done
