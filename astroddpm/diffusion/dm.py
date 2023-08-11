@@ -59,7 +59,7 @@ class DiscreteSBM(DiffusionModel):
             if self.has_thetas:
                 ps_tensor, thetas = self.ps.sample_ps(batch.shape[0])
                 batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
-                thetas = ps.rescale_thetas(thetas)
+                thetas = self.ps.rescale_theta(thetas)
                 rescaled_noise_pred = self.network(batch_tilde, timesteps, thetas)
             else:
                 ps_tensor = self.ps.sample_ps(batch.shape[0])
@@ -83,13 +83,14 @@ class DiscreteSBM(DiffusionModel):
         else:
             if self.has_thetas:
                 if thetas is None:
-                    ps, thetas = self.ps.sample_ps(sample_size).to(device)
+                    ps, thetas = self.ps.sample_ps(sample_size)
+                    ps, thetas = ps.to(device), thetas.to(device)
                     sq_ps = torch.sqrt(ps).to(device)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas)
                 else:
                     ps = self.ps(thetas).to(device)
                     sq_ps = torch.sqrt(ps).to(device)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas)
             else:
                 sq_ps = self.ps.sample_ps(sample_size).to(device)
 
@@ -132,14 +133,15 @@ class DiscreteSBM(DiffusionModel):
             if self.has_thetas:
                 if thetas is None:
                     ps, thetas = self.ps.sample_ps(sample_size)
+                    ps, thetas = ps.to(device), thetas.to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas)
                 else:
-                    ps = self.ps(thetas)
+                    ps = self.ps(thetas).to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas).to(device)
             else:
-                sq_ps = self.ps.sample_ps(sample_size)
+                sq_ps = self.ps.sample_ps(sample_size).to(device)
         
         channel, size = self.network.in_c, self.network.sizes[0]
         ## Allow for different initial timesteps
@@ -179,15 +181,16 @@ class DiscreteSBM(DiffusionModel):
             if self.has_thetas:
                 if thetas is None:
                     ps, thetas = self.ps.sample_ps(batch.shape[0])
+                    ps, thetas = ps.to(device), thetas.to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas)
                 else:
-                    ps = self.ps(thetas)
+                    ps = self.ps(thetas).to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = ps.rescale_thetas(thetas)
+                    thetas = self.ps.rescale_theta(thetas).to(device)
             else:
-                ps = self.ps.sample_ps(batch.shape[0])
-                sq_ps = torch.sqrt(ps)
+                ps = self.ps.sample_ps(batch.shape[0]).to(device)
+                sq_ps = torch.sqrt(ps).to(device)
         
         if initial_timestep is None:
             initial_timestep = 0

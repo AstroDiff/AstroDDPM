@@ -31,14 +31,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def main(args):
 
-    if args.ckpt_folder is None:
+    if args.config_folder is None:
         print("Looking for the diffuser corresponding to model_id {} in the MODELS.json all config file".format(args.model_id)) 
         with open(os.path.join(os.path.dirname(os.path.abspath(astroddpm.__file__)),'config' ,"MODELS.json")) as f:
             total_models = json.load(f)
         config = total_models[args.model_id]
     else:
         print("Looking for the diffuser config file corresponding to model_id {} in the ckpt folder provided".format(args.model_id)) 
-        with open(os.path.join(args.ckpt_folder,'config.json')) as f:
+        with open(os.path.join(args.config_folder,'config.json')) as f:
             all_config = json.load(f)
         config = all_config[args.model_id]
     diffuser = Diffuser(DiscreteSBM(DiscreteVPSDE(1000),ResUNet()), verbose = args.verbose) ##Placeholder
