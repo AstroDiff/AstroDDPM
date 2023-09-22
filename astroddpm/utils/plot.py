@@ -3,6 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import re
+from astroddpm.utils import colormap_custom
 
 amin,amax=(-6.232629, 7.390278)
 
@@ -100,7 +101,7 @@ def plot_and_save_line(samples, amin = -6, amax = 6 ,save_file = None,elementary
     ndim = len(samples[0].shape)
     if ndim == 2:
         for col, ax in enumerate(axs):
-            im=ax.imshow(samples[col],vmin=amin,vmax=amax)
+            im=ax.imshow(samples[col],vmin=amin,vmax=amax, cmap = 'cmb')
             ax.axis('off')
         fig.suptitle(title,fontsize=60)
         if not(save_file is None):
@@ -108,7 +109,7 @@ def plot_and_save_line(samples, amin = -6, amax = 6 ,save_file = None,elementary
     elif ndim == 3:
         if not rgb:
             for col, ax in enumerate(axs):
-                im=ax.imshow(samples[col].sum(axis=0),vmin=amin,vmax=amax)
+                im=ax.imshow(samples[col].sum(axis=0),vmin=amin,vmax=amax, cmap = 'cmb')
                 ax.axis('off')
             fig.suptitle(title,fontsize=60)
             if not(save_file is None):
@@ -124,7 +125,7 @@ def plot_and_save_line(samples, amin = -6, amax = 6 ,save_file = None,elementary
         print('Summing over the first dimensions')
         if not rgb:
             for col, ax in enumerate(axs):
-                im=ax.imshow(samples[col].sum(axis=tuple(range(0,ndim-2))),vmin=amin,vmax=amax)
+                im=ax.imshow(samples[col].sum(axis=tuple(range(0,ndim-2))),vmin=amin,vmax=amax, cmap = 'cmb')
                 ax.axis('off')
             fig.suptitle(title,fontsize=60)
             if not(save_file is None):
@@ -154,7 +155,7 @@ def plot_and_save_lines(samples_list, amin = -6, amax = 6 ,save_file = None,elem
         for row, samples in enumerate(samples_list):
             axs = subfigs[row].subplots(nrows=1, ncols=n_samples)
             for col, ax in enumerate(axs):
-                im=ax.imshow(samples[col],vmin=amin,vmax=amax)
+                im=ax.imshow(samples[col],vmin=amin,vmax=amax, cmap = 'cmb')
                 ax.axis('off')
             if label_list is not None:
                 try:
@@ -169,7 +170,7 @@ def plot_and_save_lines(samples_list, amin = -6, amax = 6 ,save_file = None,elem
             for row, samples in enumerate(samples_list):
                 axs = subfigs[row].subplots(nrows=1, ncols=n_samples)
                 for col, ax in enumerate(axs):
-                    im=ax.imshow(samples[col].sum(axis=0),vmin=amin,vmax=amax)
+                    im=ax.imshow(samples[col].sum(axis=0),vmin=amin,vmax=amax, cmap = 'cmb')
                     ax.axis('off')
                 if label_list is not None:
                     try:
@@ -200,7 +201,7 @@ def plot_and_save_lines(samples_list, amin = -6, amax = 6 ,save_file = None,elem
             for row, samples in enumerate(samples_list):
                 axs = subfigs[row].subplots(nrows=1, ncols=n_samples)
                 for col, ax in enumerate(axs):
-                    im=ax.imshow(samples[col].sum(axis=tuple(range(0,ndim-2))),vmin=amin,vmax=amax)
+                    im=ax.imshow(samples[col].sum(axis=tuple(range(0,ndim-2))),vmin=amin,vmax=amax, cmap = 'cmb')
                     ax.axis('off')
                 if label_list is not None:
                     try:

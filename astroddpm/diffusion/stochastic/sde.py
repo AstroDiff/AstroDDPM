@@ -131,13 +131,13 @@ class DiscreteVPSDE(DiscreteSDE):
             return -1/2*(z[0].numel()*np.log(2*np.pi) + torch.sum(z*torch.fft.ifft2(ps**-1 * torch.fft.fft2(z)).real, dim=(1, 2,3)) + torch.sum(torch.log(ps), dim=(1, 2, 3))) ## Assuming independent channels (zero cross spectra)
 
     def rescale_additive_to_preserved(self, x, t):
-        return x * self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+        return x * torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
 
     def rescale_preserved_to_additive(self, x, t):
-        return x / self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+        return x / torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
 
     def noise_level(self, t):
-        return self.sqrt_one_minus_alphas_cumprod[t].reshape(-1, 1, 1, 1)/self.sqrt_alphas_cumprod[t].reshape(-1, 1, 1, 1)
+        return torch.sqrt(1-torch.exp(-self.Beta[t]).reshape(-1, 1, 1, 1))/torch.exp(-self.Beta[t]/2).reshape(-1, 1, 1, 1)
 
 
 class ContinuousSDE(abc.ABC):

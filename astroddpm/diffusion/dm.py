@@ -92,7 +92,8 @@ class DiscreteSBM(DiffusionModel):
                     sq_ps = torch.sqrt(ps).to(device)
                     thetas = self.ps.rescale_theta(thetas)
             else:
-                sq_ps = self.ps.sample_ps(sample_size).to(device)
+                ps = self.ps.sample_ps(sample_size).to(device)
+                sq_ps = torch.sqrt(ps).to(device)
 
         channel, size = self.network.in_c, self.network.sizes[0]
         ## Allow for different initial timesteps
@@ -121,6 +122,8 @@ class DiscreteSBM(DiffusionModel):
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
+        if self.has_thetas:
+            return sample, thetas
         return sample
 
     def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True, thetas = None): 

@@ -591,7 +591,7 @@ def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False, use_g
         raise ValueError("The input tensor should have 4 or 5 dimensions")
 
 
-def power_spectrum_iso2d(data, bins=None, sampling=1.0, norm=None, return_counts=False, use_gpu=True):
+def power_spectrum_iso2d(data, bins= torch.linspace(0, np.pi, 100), sampling=1.0, norm=None, return_counts=False, use_gpu=True):
     '''Different behavior depending on the shape of data'''
     temp_device = torch.device('cuda' if use_gpu and torch.cuda.is_available() else 'cpu')
     return _spectral_iso2d(power_spectrum_2d(data.to(temp_device), norm=norm, use_gpu = use_gpu), bins=bins.to(temp_device), sampling=sampling, return_counts=return_counts, use_gpu = use_gpu) 
