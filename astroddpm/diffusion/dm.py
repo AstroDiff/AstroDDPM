@@ -71,8 +71,8 @@ class DiscreteSBM(DiffusionModel):
         drift, brownian = self.sde.reverse(sample, timestep, model_output, sq_ps = sq_ps)
         return sample + drift + brownian
 
-    def ode_step(self, model_output, timestep, sample, sq_ps = None):
-        drift = self.sde.ode_drift(sample, timestep, model_output, sq_ps = sq_ps)
+    def ode_step(self, model_output, timestep, sample):
+        drift = self.sde.ode_drift(sample, timestep, model_output)
         return sample + drift 
 
     def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, thetas = None):
@@ -158,7 +158,7 @@ class DiscreteSBM(DiffusionModel):
             timesteps = list(range(tot_steps))[::-1]
             ## Initial sample = seed
             if sample is None:
-                sample = self.sde.prior_sampling((sample_size, channel, size, size))
+                sample = self.sde.prior_sampling((sample_size, channel, size, size), sq_ps = sq_ps)
 
             progress_bar = tqdm.tqdm(total=tot_steps, disable=not verbose)
             for t in timesteps:
@@ -167,7 +167,7 @@ class DiscreteSBM(DiffusionModel):
                     residual = self.network(sample, time_tensor, thetas)
                 else:
                     residual = self.network(sample, time_tensor)
-                sample = self.ode_step(residual, time_tensor[0], sample, sq_ps = sq_ps)
+                sample = self.ode_step(residual, time_tensor[0], sample)
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
