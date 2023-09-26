@@ -175,6 +175,35 @@ class DiscreteSBM(DiffusionModel):
             return sample, thetas
         return sample
     
+    def forward_ode_sampling(self, sample, initial_timestep = None, verbose=True, thetas = None, return_thetas = False):
+        self.eval()
+        ## Get the power spectrum of the noise
+        if self.ps is not None:
+            if self.has_thetas:
+                if thetas is None:
+                    raise ValueError("Computing a latent code require the value of theta")
+                else:
+                    thetas = self.ps.rescale_theta(thetas).to(device)
+        gen = sample.to(device).clone()
+        if initial_timestep is None:
+            initial_timestep = 0
+        with torch.no_grad():
+            N = self.sde.N
+            progress_bar = tqdm.tqdm(total=N - initial_timestep, disable=not verbose)
+            for i in range(initial_timestep,N):
+                time_tensor = torch.tensor([i]).repeat(len(sample)).to(device)
+                if self.has_thetas:
+                    residual = self.network(sample, time_tensor, thetas)
+                else:
+                    residual = self.network(sample, time_tensor)
+                gen -= self.sde.ode_drift(gen, time_tensor, residual)
+                progress_bar.update(1)
+            progress_bar.close()
+        self.train()
+        if self.has_thetas and return_thetas:
+            return gen, thetas
+        return gen
+    
     def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1, thetas = None):
         '''Sample in forward time the ODE and compute the log likelihood of the batch, see [REF]'''
         self.eval()
