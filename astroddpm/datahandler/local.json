@@ -3,8 +3,8 @@
       "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_MHD_BPROJ/",
       "type": "npy files"
    },
-   "CATS_MHD_OrthBPROJ_DENSITY": {
-      "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_MHD_BPROJ/",
+   "CATS_I": {
+      "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
       "type": "npy files"
    }
 }

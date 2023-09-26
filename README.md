@@ -11,11 +11,11 @@ This repository contains all the code related to a projet to use diffusions and 
 - [ ] develop fine-tune
 - [ ] solidify resume training
 - [X] ~translate analysis tools & older separations tools~
-- [ ] add a verbose = reduced option for training
+- [ ] add a verbose ~= reduced~ option for training
 - [X] ~verify how models are saved to the local MODELS.json~ My bad
 - [ ] Add continuous time models? Variance exploding? -> probably modify first the DiscreteSBM loss method.
 - [X] Add likelihood computations ~(forward time and reverse time ODE plus log like computing)~ Still some work to calibrate
-- [ ] Multi power spectrum score based models.
+- [x] Multi power spectrum score based models.
 - [X] ~Integrate BM3D to allow an easy comparison~ In the demo separation notebook
 - [ ] Add a DDIM & an EMA option (DDRM, PIGDM...later)
 - [X] ~Complete requirements.txt~ with version

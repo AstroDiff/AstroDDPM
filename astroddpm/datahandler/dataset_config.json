@@ -4,8 +4,9 @@
       "type": "npy files",
       "transforms": ["Random_Rotate90"]
    },
-   "CATS_MHD_OrthBPROJ_DENSITY": {
-      "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_MHD_BPROJ_DENSITY/",
-      "type": "npy files"
+   "CATS_I": {
+      "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+      "type": "npy files",
+      "transforms": ["Random_Rotate90"]
    }
 }

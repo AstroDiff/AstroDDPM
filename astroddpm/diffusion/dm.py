@@ -75,7 +75,7 @@ class DiscreteSBM(DiffusionModel):
         drift = self.sde.ode_drift(sample, timestep, model_output)
         return sample + drift 
 
-    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, thetas = None):
+    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, thetas = None, return_thetas = False):
         self.eval()
         ## Get the power spectrum of the noise
         if self.ps is None:
@@ -122,11 +122,11 @@ class DiscreteSBM(DiffusionModel):
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
-        if self.has_thetas:
+        if self.has_thetas and return_thetas:
             return sample, thetas
         return sample
 
-    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True, thetas = None): 
+    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True, thetas = None, return_thetas = False): 
         ## TODO at least offer option to use RK (which would mean jumping over a few steps because we are already discretized)
         self.eval()
         ## Get the power spectrum of the noise
@@ -171,6 +171,8 @@ class DiscreteSBM(DiffusionModel):
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
+        if self.has_thetas and return_thetas:
+            return sample, thetas
         return sample
     
     def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1, thetas = None):
@@ -183,6 +185,7 @@ class DiscreteSBM(DiffusionModel):
         else:
             if self.has_thetas:
                 if thetas is None:
+                    raise ValueError("Values to compute the power spectrum must be provided in order to compute log likelihoods")
                     ps, thetas = self.ps.sample_ps(batch.shape[0])
                     ps, thetas = ps.to(device), thetas.to(device)
                     sq_ps = torch.sqrt(ps)
@@ -237,6 +240,7 @@ class DiscreteSBM(DiffusionModel):
 
 class ContinuousSBM(DiffusionModel):
     def __init__(self, sde, network):
+        raise NotImplementedError("Not implemented yet")
         super(ContinuousSBM, self).__init__(sde, network)
         self.sde = sde
         self.network = network
