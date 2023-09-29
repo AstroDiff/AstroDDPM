@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
-from tqdm.notebook import tqdm
+import tqdm
 
 ## Relative imports
 import astroddpm
@@ -28,7 +28,7 @@ from scipy.stats import wasserstein_distance
 
 import bm3d
 from bm3d import bm3d, BM3DStages
-MODEL_ID_1= 'DiscreteSBM_MultiSigmaVPSDE_MHD_BPROJ_N_1000_bottleneck_32_firstc_20_invsqrt'
+MODEL_ID_1= 'DiscreteSBM_MultiSigmaVPSDE_I_BPROJ_N_1000_bottleneck_16_firstc_6'
 
 amin,amax=(-3, 3)
 bins = torch.linspace(0, np.pi, 100)
@@ -51,7 +51,7 @@ theta_0_max = 90
 theta_1_min = 7.5e-3
 theta_1_max = 56.7e-3
 
-n_pixels = 21
+n_pixels = 41
 
 theta_grid = torch.stack(torch.meshgrid(torch.linspace(theta_0_min, theta_0_max, n_pixels), torch.linspace(theta_1_min, theta_1_max, n_pixels)), dim = -1).reshape(-1, 2)
 coordinates = torch.stack(torch.meshgrid(torch.linspace(0, 1, n_pixels), torch.linspace(0, 1, n_pixels)), dim = -1).reshape(-1, 2)
@@ -68,11 +68,11 @@ def wass_func_ps(power_spectra1, power_spectra2):
         all_wass[i] = wass
     return all_wass
 
-progress_bar = tqdm(total = n_pixels**2)
+progress_bar = tqdm.tqdm(total = n_pixels**2)
 for i in range(n_pixels):
     for j in range(n_pixels):
         theta = theta_grid[i*n_pixels + j].unsqueeze(0).to(device)
-        sample, _ = diffuser_1.diffmodel.generate_image(64, thetas = theta.repeat(64,1), verbose=False)
+        sample = diffuser_1.diffmodel.generate_image(64, thetas = theta.repeat(64,1), verbose=False)
         power_spectra_sample, mean, _, _ = powerSpectrum.set_power_spectrum_iso2d(sample, bins=bins, only_stat=False, use_gpu=True)
         diff_multi_data_theta[i,j] = (log_mean_data - torch.log(mean).cpu().detach()).abs()
         wass_dist_multi_data_theta[i,j] = wass_func_ps(power_spectra_dataset, power_spectra_sample)
@@ -82,7 +82,7 @@ diff_multi_data_theta.abs().mean(dim = -1)
 fig, ax = plt.subplots(figsize=(10, 10))
 im = ax.imshow(diff_multi_data_theta.abs().mean(dim = -1))
 fig.colorbar(im, ax=ax)
-fig.savefig('dist_mono_data_theta.pdf')
+fig.savefig('dist_mono_data_theta_large.pdf')
 
 
 ## Wasserstein distance GIF
@@ -93,10 +93,10 @@ for i in range(100):
     images.append(im)
 
 ## Generate a GIF with all the images
-images[0].save('wass_multi_data_theta.gif',
+images[0].save('wass_multi_data_theta_large.gif',
                save_all=True, append_images=images[1:], optimize=False, duration=40, loop=0)
 
 ## Save diff_multi_data_theta and wass_dist_multi_data_theta to a .pt file named 'diff_multi_data_theta.pt' and 'wass_dist_multi_data_theta.pt'
 
-torch.save(diff_multi_data_theta, 'diff_multi_data_theta.pt')
-torch.save(wass_dist_multi_data_theta, 'wass_dist_multi_data_theta.pt')
+torch.save(diff_multi_data_theta, 'diff_multi_data_theta_large.pt')
+torch.save(wass_dist_multi_data_theta, 'wass_dist_multi_data_theta_large.pt')

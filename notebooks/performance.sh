@@ -6,7 +6,7 @@ sbatch <<EOF
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --constraint=h100
-#SBATCH -o /mnt/home/dheurtel/astroddpm/astroddpm/log/performance.log
+#SBATCH -o /mnt/home/dheurtel/astroddpm/astroddpm/log/performance_long.log
 source ~/.bashrc
 source /mnt/home/dheurtel/venv/genv_DL/bin/activate
 python performance.py
