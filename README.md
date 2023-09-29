@@ -22,7 +22,7 @@ This repository contains all the code related to a projet to use diffusions and 
 - [X] ~Manage location dependent links in setup.py~ Don't think we need to.
 - [ ] Option for parallel training? Test first the inference with torch.DataParallel
 - [ ] Logging on WandB or Tensorboard
-
+- [ ] Try something akin to GibbsDDRM (partially collapsed gibbs sampling)
 
 ## How to use it
 

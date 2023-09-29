@@ -7,11 +7,11 @@ sbatch <<EOF
 #SBATCH --cpus-per-gpu=16
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
-#SBATCH --constraint=a100
+#SBATCH --constraint='h100|a100'
 #SBATCH -o /mnt/home/dheurtel/astroddpm/astroddpm/log/inference_${phi_0}_${phi_1}.log
 source ~/.bashrc
 source /mnt/home/dheurtel/venv/genv_DL/bin/activate
-python inference.py --phi_target ${phi_0} ${phi_1}
+python inference.py --phi_target ${phi_0} ${phi_1} --n_gibbs 30000
 EOF
     done
 done

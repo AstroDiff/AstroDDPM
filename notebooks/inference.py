@@ -27,9 +27,9 @@ from cmb_hmc.hmc_torch import HMC
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 amin = - 3
-amax = 3
+amax = 6
 
-MODEL_ID = 'DiscreteSBM_MultiSigmaVPSDE_MHD_BPROJ_N_1000_bottleneck_32_firstc_20_invsqrt'
+MODEL_ID = 'DiscreteSBM_MultiSigmaVPSDE_I_BPROJ_N_1000_bottleneck_16_firstc_6'
 NUM_CHAIN = 16
 
 parser = argparse.ArgumentParser(description='Inference with HMC')
@@ -37,12 +37,21 @@ parser.add_argument('--n_gibbs', type=int, default=4000,
                     help='Number of Gibbs steps')
 parser.add_argument('--phi_target', type=float, nargs=2, default=[0.5, 0.5],
                     help='Initial phi')
-parser.add_argument('--burnin_hmc', type=int, default=0,help='burnin for HMC')
+parser.add_argument('--burnin_hmc', type=int, default=10,help='burnin for HMC')
+parser.add_argument('--model_id', type=str, default=MODEL_ID,)
+parser.add_argument('--num_chain', type=int, default=NUM_CHAIN)
+parser.add_argument('--n_leap', type=int, default=5)
+parser.add_argument('--step_size', type=float, default=5e-6)
 
 args = parser.parse_args()
+
 N_GIBBS = args.n_gibbs
 BURNIN_HMC = args.burnin_hmc
 phi_target = torch.tensor(args.phi_target).to(device).unsqueeze(0)
+MODEL_ID = args.model_id
+NUM_CHAIN = args.num_chain
+N_LEAP = args.n_leap
+STEP_SIZE = args.step_size
 
 placeholder_dm = DiscreteSBM(DiscreteVPSDE(1000), ResUNet())
 diffuser = Diffuser(placeholder_dm)
@@ -115,7 +124,7 @@ thetas = thetas_0.clone().to(device)
 
 progress_bar = tqdm.tqdm(range(N_GIBBS))
 for n in range(N_GIBBS):
-    X_0, _ = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, initial_timestep=100, verbose=False, thetas = thetas)
+    X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, initial_timestep=100, verbose=False, thetas = thetas)
     ps = diffuser.diffmodel.ps(thetas)
     sq_ps = torch.sqrt(ps).to(device)
     _, mean, _ = diffuser.diffmodel.sde.sampling(X_0, 100, sq_ps)
@@ -132,9 +141,9 @@ for n in range(N_GIBBS):
     hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad)
 
     kwargs = {'nsamples': 1,
-          'burnin': 0,
-          'step_size': 5e-6,
-          'nleap': 20}
+          'burnin': BURNIN_HMC,
+          'step_size': STEP_SIZE,
+          'nleap': N_LEAP,}
 
     phi_0 = sample_prior(NUM_CHAIN).requires_grad_()
     phi_0 = phi_list[-1].requires_grad_() if len(phi_list) > 0 else phi_0
@@ -146,8 +155,9 @@ for n in range(N_GIBBS):
     thetas.detach()
     thetas.requires_grad_()
     progress_bar.update(1)
+    
+    if n % 1000 == 0:
+        tensor_phi_list = [phi.unsqueeze(0) for phi in phi_list]
+        tensor_phi_list = torch.cat(tensor_phi_list, dim=0)
 
-tensor_phi_list = [phi.unsqueeze(0) for phi in phi_list]
-tensor_phi_list = torch.cat(tensor_phi_list, dim=0)
-
-torch.save(tensor_phi_list, 'phi_list_{}_{}.pt'.format(f'{phi_target[0,0].cpu().item():.2f}', f'{phi_target[0,1].cpu().item():.2f}'))
+        torch.save(tensor_phi_list, 'data_results/phi_list_{}_{}.pt'.format(f'{phi_target[0,0].cpu().item():.2f}', f'{phi_target[0,1].cpu().item():.2f}'))
