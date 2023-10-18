@@ -18,7 +18,7 @@ class ConstantPs(nn.Module):
         elif len(self.ps.shape) == 3:
             self.ps = self.ps.unsqueeze(0)
         self.ps = self.ps.to(device)
-        self.has_thetas = False
+        self.has_phi = False
         self.config = {'type': 'constant', 'ps_path': ps_path}
     def forward(self):
         return self.ps
@@ -35,7 +35,7 @@ class ConstantPsFromTensor(nn.Module):
         elif len(self.ps.shape) == 3:
             self.ps = self.ps.unsqueeze(0)
         self.ps = self.ps.to(device)
-        self.has_thetas = False
+        self.has_phi = False
         self.config = {'type': 'constant', 'nature' : 'custom'}
     def forward(self):
         return self.ps
@@ -84,26 +84,30 @@ class CMB_H_OMBH2(nn.Module):
 
         self.torch_wn_iso = torch.tensor(wn_iso, dtype=torch.float32).to(device)
         self.torch_indices = torch.tensor(indices).to(device)
-        self.has_thetas = True
+        self.has_phi = True
 
         self.config = {'type': 'cmb_h_ombh2'}
     
-    def rescale_theta(self, theta):
-        return (theta - torch.tensor([70, 32e-3]).to(device))/torch.tensor([20,25e-3]).to(device)
+    def rescale_phi(self, phi):
+        return (phi - torch.tensor([70, 32e-3]).to(device))/torch.tensor([20,25e-3]).to(device)
 
-    def forward(self, theta):
-        theta = self.rescale_theta(theta) ## Shape (batch_size, 2) (H0, ombh2) are the 2 cosmological parameters
-        torch_diagonals = self.emulator(theta) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
+    def unscale_phi(self, phi):
+        return phi*torch.tensor([20,25e-3]).to(device) + torch.tensor([70, 32e-3]).to(device)
+
+    def forward(self, phi, to_rescale=True):
+        if to_rescale:
+            phi = self.rescale_phi(phi) ## Shape (batch_size, 2) (H0, ombh2) are the 2 cosmological parameters
+        torch_diagonals = self.emulator(phi) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
         torch_diagonals = torch.moveaxis(torch_diagonals, -1, 0) ## Shape (128, batch_size) to be able to use torchcubicspline
         spline = torchcubicspline.NaturalCubicSpline(torchcubicspline.natural_cubic_spline_coeffs(self.torch_indices, torch_diagonals))
         return torch.exp(torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)).unsqueeze(1).type(torch.float32)/12734 ## Normalization factor to have a power spectrum of order 1
 
-    def sample_theta(self, n_samples):
+    def sample_phi(self, n_samples):
         return torch.tensor([40, 49.2e-3])*torch.rand(n_samples, 2) + torch.tensor([50, 7.5e-3])
 
     def sample_ps(self, n_samples):
-        theta = self.sample_theta(n_samples).to(device)
-        return self.forward(theta), theta
+        phi = self.sample_phi(n_samples).to(device)
+        return self.forward(phi), phi
 
 
 

@@ -11,18 +11,18 @@ This repository contains all the code related to a projet to use diffusions and 
 - [ ] develop fine-tune
 - [ ] solidify resume training
 - [X] ~translate analysis tools & older separations tools~
-- [ ] add a verbose ~= reduced~ option for training
-- [X] ~verify how models are saved to the local MODELS.json~ My bad
-- [ ] Add continuous time models? Variance exploding? -> probably modify first the DiscreteSBM loss method.
+- [X] ~add a verbose option for training~
+- [X] ~verify how models are saved to the local MODELS.json~ 
+- [ ] ~Add continuous time models?~ Variance exploding?
 - [X] Add likelihood computations ~(forward time and reverse time ODE plus log like computing)~ Still some work to calibrate
 - [x] Multi power spectrum score based models.
 - [X] ~Integrate BM3D to allow an easy comparison~ In the demo separation notebook
-- [ ] Add a DDIM & an EMA option (DDRM, PIGDM...later)
+- [ ] Add an EMA option
 - [X] ~Complete requirements.txt~ with version
 - [X] ~Manage location dependent links in setup.py~ Don't think we need to.
 - [ ] Option for parallel training? Test first the inference with torch.DataParallel
 - [ ] Logging on WandB or Tensorboard
-- [ ] Try something akin to GibbsDDRM (partially collapsed gibbs sampling)
+- [ ] ~Try something akin to GibbsDDRM (partially collapsed gibbs sampling)(DDRM, PIGDM...later)~ Provide inference tools in a notebook
 
 ## How to use it
 

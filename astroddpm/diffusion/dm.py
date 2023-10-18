@@ -8,8 +8,11 @@ from torch.nn import functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from . import stochastic
+from .stochastic import solver as solv
 from . import models
 from .power_spectra import powerspec_sampler
+
+
 
 ## TODO add __repr__ to all models
 ## TODO add DDIM
@@ -21,10 +24,7 @@ class DiffusionModel(nn.Module):
         self.sde = sde
         self.network = network
 
-    def loss(self, batch, timesteps): ## TODO exclude timesteps from the args
-        raise NotImplementedError
-
-    def step(self, model_output, timestep, sample): ## TODO remove that method?
+    def loss(self, batch):
         raise NotImplementedError
 
     def generate_image(self, sample_size, channel, size, sample=None, initial_timestep=None):
@@ -41,9 +41,9 @@ class DiscreteSBM(DiffusionModel):
         self.N = self.sde.N
         self.ps = ps
         if ps is not None:
-            self.has_thetas = self.ps.has_thetas
+            self.has_phi = self.ps.has_phi
         else:
-            self.has_thetas = False
+            self.has_phi = False
         self.config = { "sde" : self.sde.config, "network" : self.network.config, "type" : "DiscreteSBM"}
         if ps is None:
             self.config["ps"] = {}
@@ -56,11 +56,11 @@ class DiscreteSBM(DiffusionModel):
             batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps)
             rescaled_noise_pred = self.network(batch_tilde, timesteps)
         else:
-            if self.has_thetas:
-                ps_tensor, thetas = self.ps.sample_ps(batch.shape[0])
+            if self.has_phi:
+                ps_tensor, phi = self.ps.sample_ps(batch.shape[0])
                 batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
-                thetas = self.ps.rescale_theta(thetas)
-                rescaled_noise_pred = self.network(batch_tilde, timesteps, thetas)
+                phi = self.ps.rescale_phi(phi)
+                rescaled_noise_pred = self.network(batch_tilde, timesteps, phi)
             else:
                 ps_tensor = self.ps.sample_ps(batch.shape[0])
                 batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
@@ -75,22 +75,22 @@ class DiscreteSBM(DiffusionModel):
         drift = self.sde.ode_drift(sample, timestep, model_output)
         return sample + drift 
 
-    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, thetas = None, return_thetas = False):
+    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, phi = None, return_phi = False):
         self.eval()
         ## Get the power spectrum of the noise
         if self.ps is None:
             sq_ps = None
         else:
-            if self.has_thetas:
-                if thetas is None:
-                    ps, thetas = self.ps.sample_ps(sample_size)
-                    ps, thetas = ps.to(device), thetas.to(device)
+            if self.has_phi:
+                if phi is None:
+                    ps, phi = self.ps.sample_ps(sample_size)
+                    ps, phi = ps.to(device), phi.to(device)
                     sq_ps = torch.sqrt(ps).to(device)
-                    thetas = self.ps.rescale_theta(thetas)
+                    phi = self.ps.rescale_phi(phi)
                 else:
-                    ps = self.ps(thetas).to(device)
+                    ps = self.ps(phi).to(device)
                     sq_ps = torch.sqrt(ps).to(device)
-                    thetas = self.ps.rescale_theta(thetas)
+                    phi = self.ps.rescale_phi(phi)
             else:
                 ps = self.ps.sample_ps(sample_size).to(device)
                 sq_ps = torch.sqrt(ps).to(device)
@@ -113,8 +113,8 @@ class DiscreteSBM(DiffusionModel):
             for t in timesteps:
                 time_tensor = (torch.ones(sample_size, 1) * t).long().to(device)
 
-                if self.has_thetas:
-                    residual = self.network(sample, time_tensor, thetas)
+                if self.has_phi:
+                    residual = self.network(sample, time_tensor, phi)
                 else:
                     residual = self.network(sample, time_tensor)
 
@@ -122,27 +122,27 @@ class DiscreteSBM(DiffusionModel):
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
-        if self.has_thetas and return_thetas:
-            return sample, thetas
+        if self.has_phi and return_phi:
+            return sample, phi
         return sample
 
-    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True, thetas = None, return_thetas = False): 
+    def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True, phi = None, return_phi = False): 
         ## TODO at least offer option to use RK (which would mean jumping over a few steps because we are already discretized)
         self.eval()
         ## Get the power spectrum of the noise
         if self.ps is None:
             sq_ps = None
         else:
-            if self.has_thetas:
-                if thetas is None:
-                    ps, thetas = self.ps.sample_ps(sample_size)
-                    ps, thetas = ps.to(device), thetas.to(device)
+            if self.has_phi:
+                if phi is None:
+                    ps, phi = self.ps.sample_ps(sample_size)
+                    ps, phi = ps.to(device), phi.to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = self.ps.rescale_theta(thetas)
+                    phi = self.ps.rescale_phi(phi)
                 else:
-                    ps = self.ps(thetas).to(device)
+                    ps = self.ps(phi).to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = self.ps.rescale_theta(thetas).to(device)
+                    phi = self.ps.rescale_phi(phi).to(device)
             else:
                 sq_ps = self.ps.sample_ps(sample_size).to(device)
         
@@ -163,27 +163,27 @@ class DiscreteSBM(DiffusionModel):
             progress_bar = tqdm.tqdm(total=tot_steps, disable=not verbose)
             for t in timesteps:
                 time_tensor = (torch.ones(sample_size, 1) * t).long().to(device)
-                if self.has_thetas:
-                    residual = self.network(sample, time_tensor, thetas)
+                if self.has_phi:
+                    residual = self.network(sample, time_tensor, phi)
                 else:
                     residual = self.network(sample, time_tensor)
                 sample = self.ode_step(residual, time_tensor[0], sample)
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
-        if self.has_thetas and return_thetas:
-            return sample, thetas
+        if self.has_phi and return_phi:
+            return sample, phi
         return sample
     
-    def forward_ode_sampling(self, sample, initial_timestep = None, verbose=True, thetas = None, return_thetas = False):
+    def forward_ode_sampling(self, sample, initial_timestep = None, verbose=True, phi = None, return_phi = False):
         self.eval()
         ## Get the power spectrum of the noise
         if self.ps is not None:
-            if self.has_thetas:
-                if thetas is None:
-                    raise ValueError("Computing a latent code require the value of theta")
+            if self.has_phi:
+                if phi is None:
+                    raise ValueError("Computing a latent code require the value of phi")
                 else:
-                    thetas = self.ps.rescale_theta(thetas).to(device)
+                    phi = self.ps.rescale_phi(phi).to(device)
         gen = sample.to(device).clone()
         if initial_timestep is None:
             initial_timestep = 0
@@ -192,19 +192,19 @@ class DiscreteSBM(DiffusionModel):
             progress_bar = tqdm.tqdm(total=N - initial_timestep, disable=not verbose)
             for i in range(initial_timestep,N):
                 time_tensor = torch.tensor([i]).repeat(len(sample)).to(device)
-                if self.has_thetas:
-                    residual = self.network(sample, time_tensor, thetas)
+                if self.has_phi:
+                    residual = self.network(sample, time_tensor, phi)
                 else:
                     residual = self.network(sample, time_tensor)
                 gen -= self.sde.ode_drift(gen, time_tensor, residual)
                 progress_bar.update(1)
             progress_bar.close()
         self.train()
-        if self.has_thetas and return_thetas:
-            return gen, thetas
+        if self.has_phi and return_phi:
+            return gen, phi
         return gen
     
-    def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1, thetas = None):
+    def log_likelihood(self, batch, initial_timestep = None, verbose=True, repeat = 1, phi = None):
         '''Sample in forward time the ODE and compute the log likelihood of the batch, see [REF]'''
         self.eval()
         ## Get the power spectrum of the noise
@@ -212,17 +212,17 @@ class DiscreteSBM(DiffusionModel):
             sq_ps = None
             ps = None
         else:
-            if self.has_thetas:
-                if thetas is None:
+            if self.has_phi:
+                if phi is None:
                     raise ValueError("Values to compute the power spectrum must be provided in order to compute log likelihoods")
-                    ps, thetas = self.ps.sample_ps(batch.shape[0])
-                    ps, thetas = ps.to(device), thetas.to(device)
+                    ps, phi = self.ps.sample_ps(batch.shape[0])
+                    ps, phi = ps.to(device), phi.to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = self.ps.rescale_theta(thetas)
+                    phi = self.ps.rescale_phi(phi)
                 else:
-                    ps = self.ps(thetas).to(device)
+                    ps = self.ps(phi).to(device)
                     sq_ps = torch.sqrt(ps)
-                    thetas = self.ps.rescale_theta(thetas).to(device)
+                    phi = self.ps.rescale_phi(phi).to(device)
             else:
                 ps = self.ps.sample_ps(batch.shape[0]).to(device)
                 sq_ps = torch.sqrt(ps).to(device)
@@ -240,8 +240,8 @@ class DiscreteSBM(DiffusionModel):
 
         for i in range(initial_timestep, N):
             timesteps = torch.tensor([i]).repeat(len(gen)).to(device)
-            if self.has_thetas:
-                modified_score = self.network(gen, timesteps, thetas)
+            if self.has_phi:
+                modified_score = self.network(gen, timesteps, phi)
             else:
                 modified_score = self.network(gen, timesteps)
 
@@ -268,8 +268,7 @@ class DiscreteSBM(DiffusionModel):
         return log_likelihood, pre_prior_ll, lls, gen
 
 class ContinuousSBM(DiffusionModel):
-    def __init__(self, sde, network):
-        raise NotImplementedError("Not implemented yet")
+    def __init__(self, sde, network, ps = None):
         super(ContinuousSBM, self).__init__(sde, network)
         self.sde = sde
         self.network = network
@@ -277,42 +276,88 @@ class ContinuousSBM(DiffusionModel):
         self.tmin = self.sde.tmin
         self.tmax = self.sde.tmax
 
-    def loss(self, batch):
-        timesteps = (torch.rand(batch.shape[0]).to(device) * (self.tmax - self.tmin) + self.tmin).long()
-        batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps)
-        rescaled_noise_pred = self.network(batch_tilde, timesteps)
-        return F.mse_loss(rescaled_noise_pred, rescaled_noise)
-
-    def step(self, model_output, timestep, sample):
-        drift, brownian = self.sde.reverse(sample, timestep, model_output)
-        return sample + drift + brownian
-
-    def ode_step(self, model_output, timestep, sample):
-        drift = self.sde.ode_drift(sample, timestep, model_output)
-        return sample + drift 
-        
-    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True):
-        self.eval()
-        raise NotImplementedError("Not implemented yet")
-        channel, size = self.network.in_c, self.network.sizes[0]
-        
-        if initial_timestep is None:
-            tot_steps = self.sde.N
+        if ps is None:
+            self.config["ps"] = {}
         else:
-            tot_steps = initial_timestep
+            self.config["ps"] = ps.config
+        self.ps = ps
+        if ps is not None:
+            self.has_phi = self.ps.has_phi
+        else:
+            self.has_phi = False
+
+        ## TODO add : option for uneven timesteps sampling when computing the loss
+
+    def loss(self, batch):
+        timesteps = (torch.rand(batch.shape[0],1).to(device) * (self.tmax - self.tmin) + self.tmin)
+
+        if self.ps is None:
+            batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps)
+            rescaled_noise_pred = self.network(batch_tilde, timesteps)
+        else:
+            if self.has_phi:
+                ps_tensor, phi = self.ps.sample_ps(batch.shape[0])
+                batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
+                phi = self.ps.rescale_phi(phi)
+                rescaled_noise_pred = self.network(batch_tilde, timesteps, phi)
+            else:
+                ps_tensor = self.ps.sample_ps(batch.shape[0])
+                batch_tilde, _ , rescaled_noise = self.sde.sampling(batch, timesteps, torch.sqrt(ps_tensor))
+                rescaled_noise_pred = self.network(batch_tilde, timesteps)
+
+        return F.mse_loss(rescaled_noise_pred, rescaled_noise)
+        
+    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, schedule = None, solver = None, phi = None, return_phi = False):
+        self.eval()
+
+        if schedule is None:
+            if initial_timestep is None:
+                t_min = self.sde.tmin
+                t_max = self.sde.tmax
+            else:
+                t_min = self.sde.tmin
+                t_max = initial_timestep
+            schedule = torch.linspace(t_min, t_max, 1000).to(device)
+        
+        if solver is None:
+            solver = solv.EulerMaruyama(schedule)
+
+        if self.ps is None:
+            sq_ps = None
+        else:
+            if self.has_phi:
+                if phi is None:
+                    ps, phi = self.ps.sample_ps(sample_size)
+                    ps, phi = ps.to(device), phi.to(device)
+                    sq_ps = torch.sqrt(ps)
+                    phi = self.ps.rescale_phi(phi)
+                else:
+                    ps = self.ps(phi).to(device)
+                    sq_ps = torch.sqrt(ps)
+                    phi = self.ps.rescale_phi(phi).to(device)
+            else:
+                ps = self.ps.sample_ps(sample_size).to(device)
+                sq_ps = torch.sqrt(ps).to(device)
+
+        if sample is None:
+            channel, size = self.network.in_c, self.network.sizes[0]
+            sample = self.sde.prior_sampling((sample_size, channel, size, size), sq_ps = sq_ps).to(device)
+        ## TODO more efficient for f, g? -> ok for our solver but not for others 
+        def f(x_t, t):
+            if self.has_phi:
+                model_output = self.network(x_t, t, phi)
+            else:
+                model_output = self.network(x_t, t)
+            return self.sde.reverse(x_t, t, model_output, sq_ps = sq_ps)[0]
+    
+        def gdW(x_t, t):
+            dummy_output = torch.zeros_like(x_t)
+            return self.sde.reverse(x_t, t, dummy_output, sq_ps = sq_ps)[1]
         with torch.no_grad():
-            timesteps = list(range(tot_steps))[::-1]
-            if sample is None:
-                sample = self.sde.prior_sampling((sample_size, channel, size, size))
-            progress_bar = tqdm.tqdm(total=tot_steps, disable=not verbose)
-            for t in timesteps:
-                time_tensor = (torch.ones(sample_size, 1) * t).long().to(device)
-                residual = self.network(sample, time_tensor)
-                sample = self.step(residual, time_tensor[0], sample)
-                progress_bar.update(1)
-            progress_bar.close()
-        self.train()
-        return sample
+            gen = solver.forward(sample, f, gdW, reverse_time = True)
+        if self.has_phi and return_phi:
+            return gen, phi
+        return gen
 
     def ode_sampling(self, sample_size, sample = None, initial_timestep = None, verbose=True): ## TODO scheduler maybe only in continuous time? 
         self.eval()
@@ -383,6 +428,13 @@ def get_diffusion_model(config):
 
     sto_diff_eq = stochastic.sde.get_sde(sde_config)
 
+    if "ps" not in config.keys():
+        config["ps"] = {}
+    ps_config = config["ps"]
+
+    ps_sampler = powerspec_sampler.get_ps_sampler(ps_config)
+
+
     if "network" not in config.keys():
         config["network"] = {}
     network_config = config["network"]
@@ -400,15 +452,11 @@ def get_diffusion_model(config):
 
     network = models.network.get_network(network_config)
 
-    if "ps" not in config.keys():
-        config["ps"] = {}
-    ps_config = config["ps"]
-
-    ps_sampler = powerspec_sampler.get_ps_sampler(ps_config)
-
     if "type" not in config.keys():
         config["type"] = "DiscreteSBM"
     if config["type"].lower() == "discretesbm":
         return DiscreteSBM(sto_diff_eq, network, ps = ps_sampler)
+    elif config["type"].lower() == "continuoussbm":
+        return ContinuousSBM(sto_diff_eq, network, ps = ps_sampler)
     else:
         raise NotImplementedError("Diffusion model {} not implemented for now".format(config["type"]))

@@ -61,7 +61,7 @@ class SineCosine(nn.Module):
 
 class DownResBlock(nn.Module):
     def __init__(self, size, in_c, out_c, time_emb_dim=100, normalize="LN", group_c=1,
-        padding_mode="circular", dropout=0, eps_norm=1e-5, skiprescale=False, has_theta = False, theta_embed_dim=100,):
+        padding_mode="circular", dropout=0, eps_norm=1e-5, skiprescale=False, has_phi = False, phi_embed_dim=100,):
         super(DownResBlock, self).__init__()
 
         self.block = nn.Sequential(
@@ -76,13 +76,13 @@ class DownResBlock(nn.Module):
 
         self.te = make_te(time_emb_dim, in_c)
 
-        if has_theta:
-            self.thetae = make_te(theta_embed_dim, in_c)
+        if has_phi:
+            self.phie = make_te(phi_embed_dim, in_c)
 
-    def forward(self, x, t, theta = None):
+    def forward(self, x, t, phi = None):
         n = len(x)
-        if theta is not None:
-            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.thetae(theta).reshape(n, -1, 1, 1))
+        if phi is not None:
+            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.phie(phi).reshape(n, -1, 1, 1))
         else:
             h = self.block(x + self.te(t).reshape(n, -1, 1, 1))
         x = self.skip(x)
@@ -95,7 +95,7 @@ class DownResBlock(nn.Module):
 
 class UpResBlock(nn.Module):
     def __init__(self, size, in_c, time_emb_dim=100, normalize="LN", group_c=1, 
-        padding_mode="circular", dropout=0, eps_norm=1e-5, skiprescale=False, has_theta = False, theta_embed_dim=100,):
+        padding_mode="circular", dropout=0, eps_norm=1e-5, skiprescale=False, has_phi = False, phi_embed_dim=100,):
         super(UpResBlock, self).__init__()
 
         self.block = nn.Sequential(
@@ -110,13 +110,13 @@ class UpResBlock(nn.Module):
 
         self.te = make_te(time_emb_dim, in_c)
 
-        if has_theta:
-            self.thetae = make_te(theta_embed_dim, in_c)
+        if has_phi:
+            self.phie = make_te(phi_embed_dim, in_c)
 
-    def forward(self, x, t, theta = None):
+    def forward(self, x, t, phi = None):
         n = len(x)
-        if theta is not None:
-            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.thetae(theta).reshape(n, -1, 1, 1))
+        if phi is not None:
+            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.phie(phi).reshape(n, -1, 1, 1))
         else:
             h = self.block(x + self.te(t).reshape(n, -1, 1, 1))
         x = self.skip(x)
@@ -129,7 +129,7 @@ class UpResBlock(nn.Module):
 
 class MidResBlock(nn.Module):
     def __init__(self, size, in_c, time_emb_dim=100, normalize="LN", group_c=1, 
-        padding_mode="circular", dropout=0, eps_norm=1e-5,skiprescale=False, has_theta = False, theta_embed_dim=100,):
+        padding_mode="circular", dropout=0, eps_norm=1e-5,skiprescale=False, has_phi = False, phi_embed_dim=100,):
         super(MidResBlock, self).__init__()
 
         self.block = nn.Sequential(
@@ -144,13 +144,13 @@ class MidResBlock(nn.Module):
 
         self.te = make_te(time_emb_dim, in_c)
 
-        if has_theta:
-            self.thetae = make_te(theta_embed_dim, in_c)
+        if has_phi:
+            self.phie = make_te(phi_embed_dim, in_c)
 
-    def forward(self, x, t, theta = None):
+    def forward(self, x, t, phi = None):
         n = len(x)
-        if theta is not None:
-            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.thetae(theta).reshape(n, -1, 1, 1))
+        if phi is not None:
+            h = self.block(x + self.te(t).reshape(n, -1, 1, 1) + self.phie(phi).reshape(n, -1, 1, 1))
         else:
             h = self.block(x + self.te(t).reshape(n, -1, 1, 1))
         x = self.skip(x)
@@ -164,7 +164,7 @@ class MidResBlock(nn.Module):
 class ResUNet(nn.Module):
     def __init__(self, in_c=1, out_c=1, first_c=10, sizes=[256, 128, 64, 32], num_blocks=1, n_steps=1000, time_emb_dim=100, 
         dropout=0, attention=[], normalisation="default", padding_mode="circular", eps_norm=1e-5, skiprescale=False, discretization = "discrete", embedding_mode = None,
-        has_theta = False, theta_shape = 1, theta_embed_dim=100,
+        has_phi = False, phi_shape = 1, phi_embed_dim=100,
     ):
         super(ResUNet, self).__init__()
         ## TODO add attention
@@ -175,7 +175,7 @@ class ResUNet(nn.Module):
             embedding_mode = "fourier"
         self.config = { "in_c": in_c, "out_c": out_c, "first_c": first_c, "sizes": sizes, "num_blocks": num_blocks, "n_steps": n_steps, "time_emb_dim": time_emb_dim,
         "dropout": dropout, "attention": attention, "normalisation": normalisation, "padding_mode": padding_mode, "eps_norm": eps_norm, "skiprescale": skiprescale, "type" : "ResUNet", 
-        "discretization": discretization, "embedding_mode": embedding_mode}
+        "discretization": discretization, "embedding_mode": embedding_mode, "has_phi": has_phi, "phi_shape": phi_shape, "phi_embed_dim": phi_embed_dim,}
 
         self.normalisation = normalisation
         self.in_c = in_c
@@ -191,9 +191,9 @@ class ResUNet(nn.Module):
         self.eps_norm = eps_norm
         self.discretiation = discretization
         self.embedding_mode = embedding_mode
-        self.has_theta = has_theta
-        self.theta_shape = theta_shape
-        self.theta_embed_dim = theta_embed_dim
+        self.has_phi = has_phi
+        self.phi_shape = phi_shape
+        self.phi_embed_dim = phi_embed_dim
 
         
         # Time embedding
@@ -203,7 +203,7 @@ class ResUNet(nn.Module):
             self.time_embed.requires_grad_(False)
         
         elif discretization == "continuous":
-            if embedding_mode == "fourier":
+            if (embedding_mode is None) or (embedding_mode == "fourier"):
                 assert time_emb_dim % 2 == 0, "time_emb_dim must be even for fourier embedding"
                 linear1 = nn.Linear(1, time_emb_dim//2)
                 linear1.weight.data = gaussian_fourier_embedding(time_emb_dim//2).unsqueeze(1)
@@ -212,9 +212,9 @@ class ResUNet(nn.Module):
                 self.time_embed.requires_grad_(False)
             elif embedding_mode == "forward":
                 self.time_embed = nn.Linear(1, time_emb_dim)
-        ## Theta embedding
-        if has_theta:
-            self.theta_embed = nn.Sequential(nn.Linear(theta_shape, theta_embed_dim), nn.SiLU())
+        ## phi embedding
+        if has_phi:
+            self.phi_embed = nn.Sequential(nn.Linear(phi_shape, phi_embed_dim), nn.SiLU())
 
         # First Half
 
@@ -231,7 +231,7 @@ class ResUNet(nn.Module):
                     self.downblocks.append(
                         MidResBlock(size,curr_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                         group_c=first_c // 2,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,
-                        has_theta = has_theta, theta_embed_dim=100,)
+                        has_phi = has_phi, phi_embed_dim=100,)
                     )
                     pass
                 elif i == 0 and j == 0: ## If first block of first group
@@ -239,14 +239,14 @@ class ResUNet(nn.Module):
                     self.downblocks.append(
                             DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                             padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,
-                            has_theta = has_theta, theta_embed_dim=100,)
+                            has_phi = has_phi, phi_embed_dim=100,)
                     )
                 else: ## If any other block
                     block_out_c = 2 * curr_c
                     self.downblocks.append(
                         DownResBlock(size,curr_c,block_out_c,time_emb_dim=time_emb_dim,normalize=normalisation,
                         group_c=first_c // 2,padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,
-                        has_theta = has_theta, theta_embed_dim=100,)
+                        has_phi = has_phi, phi_embed_dim=100,)
                     )
                 curr_c = block_out_c
 
@@ -270,13 +270,13 @@ class ResUNet(nn.Module):
                     self.upblocks.append(
                         DownResBlock(size * 2,2 * curr_c,out_c=curr_c,normalize=normalisation,group_c=first_c // 2,
                         padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,
-                        has_theta = has_theta, theta_embed_dim=100,)
+                        has_phi = has_phi, phi_embed_dim=100,)
                     )
                 else:
                     self.upblocks.append(
                         UpResBlock(size * 2,2 * curr_c,time_emb_dim,normalize=normalisation,group_c=first_c // 2,
                         padding_mode=padding_mode,dropout=dropout,eps_norm=eps_norm,skiprescale=skiprescale,
-                        has_theta = has_theta, theta_embed_dim=100,)
+                        has_phi = has_phi, phi_embed_dim=100,)
                     )
                     curr_c = curr_c // 2
 
@@ -296,20 +296,20 @@ class ResUNet(nn.Module):
             norm_l,
         )
 
-    def forward(self, x, t, theta = None):
-
+    def forward(self, x, t, phi = None):
+        
         t = self.time_embed(t)
-        if theta is not None and self.has_theta:
-            theta = self.theta_embed(theta)
+        if phi is not None and self.has_phi:
+            phi = self.phi_embed(phi)
         else:
-            theta = None
+            phi = None
         h = x
 
         h_list = [h]
 
         for block in self.downblocks:
             if isinstance(block, DownResBlock) or isinstance(block, MidResBlock):
-                h = block(h, t, theta)
+                h = block(h, t, phi)
                 h_list.append(h)
             else:
                 h = block(h)
@@ -322,7 +322,7 @@ class ResUNet(nn.Module):
         for block in self.upblocks:
             if isinstance(block, UpResBlock) or isinstance(block, DownResBlock):
                 h = torch.cat([h, h_list.pop()], dim=1)
-                h = block(h, t, theta)
+                h = block(h, t, phi)
             else:
                 h = block(h)
         h = self.tail(h)
@@ -366,12 +366,12 @@ def get_network(config): ## TODO add more networks, TODO be careful when I will 
             config["discretization"] = "discrete"
         if "embedding_mode" not in config.keys():
             config["embedding_mode"] = None
-        if "has_theta" not in config.keys():
-            config["has_theta"] = False
-        if "theta_embed_dim" not in config.keys():
-            config["theta_embed_dim"] = 100
-        if "theta_shape" not in config.keys():
-            config["theta_shape"] = None
-        return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"], discretization=config["discretization"], embedding_mode=config["embedding_mode"], has_theta=config["has_theta"], theta_embed_dim=config["theta_embed_dim"], theta_shape=config["theta_shape"])
+        if "has_phi" not in config.keys():
+            config["has_phi"] = False
+        if "phi_embed_dim" not in config.keys():
+            config["phi_embed_dim"] = 100
+        if "phi_shape" not in config.keys():
+            config["phi_shape"] = None
+        return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"], discretization=config["discretization"], embedding_mode=config["embedding_mode"], has_phi=config["has_phi"], phi_embed_dim=config["phi_embed_dim"], phi_shape=config["phi_shape"])
     else:
         raise NotImplementedError(f"Network type {config['type']} not implemented")

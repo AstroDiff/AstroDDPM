@@ -44,7 +44,7 @@ class Diffuser(nn.Module):
         for key, value in kwargs.items():
             setattr(self, key, value)
         if not hasattr(self, "verbose"):
-            self.verbose = True ## TODO implement!!!
+            self.verbose = True
         if hasattr(self, "config"):
             if type(self.config) == str:
                 print("Existing attributes may be overwritten: loading config from {}".format(self.config))
@@ -102,7 +102,6 @@ class Diffuser(nn.Module):
             print("No model id found")
         return res_config
         
-
     def set_model_id(self, model_id):
         ## TODO check conflicts
         if hasattr(self, "model_id"):
@@ -347,7 +346,6 @@ class Diffuser(nn.Module):
         else:
             print("Loading only the weights, no optimizer or scheduler.")
 
-
     def save(self, all_models = False, new_model_id = None, also_ckpt = True, for_training = True):
         ## Save the model config to json dict in ckpt folder plus to the MODELS.json (if asked) and then save the ckpt
         ## Save the model to a checkpoint, with option to save the optimizer state, etc.  
@@ -574,7 +572,6 @@ class Diffuser(nn.Module):
             separate_ckpt = False
         return finetune, resume_training, ckpting, sampling, verbose, save_all_models, separate_ckpt
 
-
     def train(self, **kwargs):
         ## Train the model, option resume training after loading a ckpt, finetuning a pretrained model, etc.
         ## TODO add option to train on a subset of the dataset (for example for debugging)
@@ -586,17 +583,13 @@ class Diffuser(nn.Module):
         else:
             self.save()
 
-        global_step = 0
-        steps_per_epoch = len(self.train_dataloader)
-        num_timesteps = self.diffmodel.sde.N
+        progress_bar = tqdm.tqdm(total=self.epochs-self.epoch, disable=not verbose)
             
         ## TODO if discrete only!!!
         for current_epoch in range(self.epoch,self.epochs): ## or epoch+1?
             self.epoch = current_epoch
             self.diffmodel.train()
 
-            progress_bar = tqdm.tqdm(total=steps_per_epoch, disable=not verbose)
-            progress_bar.set_description(f"Epoch {self.epoch}")
 
             for _, batch in enumerate(self.train_dataloader):
                 if len(batch.shape)==3:
@@ -609,17 +602,12 @@ class Diffuser(nn.Module):
                 loss.backward()
                 self.optimizer.step()
 
-                progress_bar.update(1)
-                logs = {"loss": loss.detach().item(), "step": global_step}
                 self.losses.append(loss.detach().item())
-                progress_bar.set_postfix(**logs)
-                global_step += 1
                 if not (self.scheduler is None):
                     self.scheduler.step()
-            progress_bar.close()
 
             if not (self.test_dataloader is None):
-                #self.diffmodel.eval()
+                self.diffmodel.eval()
                 with torch.no_grad():
                     loss = 0
                     tot_len = 0
@@ -633,7 +621,8 @@ class Diffuser(nn.Module):
                         tot_len += len(test_loss_batch)
 
                 self.test_losses.append(loss/tot_len)
-                #self.diffmodel.train()
+                self.diffmodel.train()
+
             if ckpting and (self.epoch % self.ckpt_epoch == 0):
                 if separate_ckpt:
                     try:
@@ -647,12 +636,15 @@ class Diffuser(nn.Module):
                 gen = self.generate(self.sample_size)
                 str_epoch = str(self.epoch).zfill(np.floor(np.log10(self.epochs)).astype(int)+1)
                 ndigit_samples = np.floor(np.log10(self.sample_size)).astype(int)+1
+
                 if not os.path.isdir(os.path.join(self.sample_dir, self.model_id)):
                     os.makedirs(os.path.join(self.sample_dir, self.model_id))
+
                 gen = np.split(gen.detach().cpu().numpy(),len(gen), axis = 0)
                 for i, img in enumerate(gen):
                     file_path = os.path.join(self.sample_dir, self.model_id,"epoch_{}_{}".format(str_epoch, str(i).zfill(ndigit_samples)))
                     np.save(file_path, img)
+
             if self.epoch == self.epochs-1:
                 print("Training finished. Final sampling and checkpointing.")
                 if sampling:
@@ -665,8 +657,8 @@ class Diffuser(nn.Module):
                 if ckpting:
                     self.save_ckpt(verbose=False, for_training = True)
 
+            progress_bar.update(1)
         return self.losses, self.test_losses
-
 
 
         ## Modify those if resuming training or finetuning TODO...
@@ -677,7 +669,6 @@ class Diffuser(nn.Module):
             if kwargs["finetune"]:
                 raise NotImplementedError("Finetuning is not implemented yet.")
         
-    
     def generate(self, sample_size = None, batch_size = None ):
         if sample_size is None:
             if hasattr(self, "sample_size"):
@@ -696,11 +687,6 @@ class Diffuser(nn.Module):
             generated.append(self.diffmodel.generate_image(sample_size%batch_size))
         generated = torch.cat(generated, dim=0)
         return generated
-
-
-    def plot(self, **kwargs):
-        ## Plot training curves, samples, etc. TODO change the method name and duplicate it for every needed plot
-        pass
 
     def log(self, **kwargs):
         ## Retrieve training curves, samples, and logs then print them OR give the link towards the tensorboard/weight and biases project/server session
