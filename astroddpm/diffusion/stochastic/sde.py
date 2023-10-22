@@ -196,6 +196,10 @@ class ContinuousVPSDE(ContinuousSDE):
         self.beta_T = beta_max
         self.tmin = t_min
         self.tmax = t_max
+        if self.tmax < self.tmin:
+            raise ValueError('t_max must be greater than t_min')
+        if self.tmax != 1.0:
+            warnings.warn('t_max != 1.0 is not implemented yet and behavior is not guaranteed')
         self.beta_schedule = beta_schedule
         if beta_schedule == 'linear':
             self.beta = lambda t: (self.beta_0 +  (self.beta_T - self.beta_0) * t)
@@ -204,7 +208,7 @@ class ContinuousVPSDE(ContinuousSDE):
             self.beta = lambda t: self.beta_0 + (self.beta_T - self.beta_0)*(1 - torch.cos(np.pi*t))/(2)
             self.Beta = lambda t: self.beta_0 * t + (self.beta_T - self.beta_0)*(t - torch.sin(np.pi*t)/np.pi)/2
 
-        self.config = {'type' : 'ContinuousVPSDE', 'beta_min':beta_min, 'beta_max':beta_max, 't_min':t_min, 't_max':t_max, 'schedule':beta_schedule}
+        self.config = {'type' : 'ContinuousVPSDE', 'beta_min':beta_min, 'beta_max':beta_max, 't_min':t_min, 't_max':t_max, 'beta_schedule':beta_schedule}
 
     def foward(self, x_t, t, sq_ps = None):
         ## Returns the drift and brownian term of the forward SDE
@@ -272,7 +276,7 @@ class ContinuousVPSDE(ContinuousSDE):
     def noise_level(self, t):
         return torch.sqrt(1 - torch.exp(-self.Beta(t)))/torch.exp(-self.Beta(t)/2)
     
-    def get_closest_timestep(self, noise_level):
+    def get_closest_timestep(self, noise_level, n_step_method = 20, method = 'newton'):
         ## Solves the equation noise_level = self.noise_level(t) for t
         ## This is done analytically, noting that noise_level = sqrt(1 - exp(-Beta))/exp(-Beta/2)
         ## We first substitute x = exp(-Beta/2) and solve for x, then we solve for t (simple polynomial)
@@ -281,7 +285,25 @@ class ContinuousVPSDE(ContinuousSDE):
             timesteps = (-self.beta_0 + torch.sqrt(delta))/(self.beta_T - self.beta_0)
             return torch.clamp(timesteps, self.tmin, self.tmax) ## TODO: check if this is correct
         elif self.beta_schedule == 'cosine':
-            raise NotImplementedError('The cosine schedule is not implemented yet')
+            if type(noise_level) == float or type(noise_level) == int:
+                noise_level = torch.tensor(noise_level)
+            t_guess = 1/2*torch.ones_like(noise_level)
+            if method == 'implicit':
+                def implicit_func(t):
+                    return (torch.log(1+noise_level**2)+(self.beta_T - self.beta_0)*torch.sin(np.pi*t)/(2*np.pi))*(2/(self.beta_T + self.beta_0))
+                ## Solve implicit_func(t) = t
+                timesteps = t_guess
+                for _ in range(n_step_method):
+                    timesteps = implicit_func(timesteps)
+            elif method == 'newton':
+                def newton_func(t):
+                    return (self.beta_T + self.beta_0)/2*t - (torch.log(1+noise_level**2)+(self.beta_T - self.beta_0)*torch.sin(np.pi*t)/(2*np.pi))
+                def newton_func_prime(t):
+                    return (self.beta_T + self.beta_0)/2 - (self.beta_T - self.beta_0)*torch.cos(np.pi*t)/2
+                timesteps = t_guess
+                for _ in range(n_step_method):
+                    timesteps = timesteps - newton_func(timesteps)/newton_func_prime(timesteps)
+            return torch.clamp(timesteps, self.tmin, self.tmax)
         else:
             raise NotImplementedError('The beta schedule {} is not implemented'.format(self.beta_schedule))
 

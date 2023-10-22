@@ -307,7 +307,7 @@ class ContinuousSBM(DiffusionModel):
 
         return F.mse_loss(rescaled_noise_pred, rescaled_noise)
         
-    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=True, schedule = None, solver = None, phi = None, return_phi = False):
+    def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=False, schedule = None, solver = None, phi = None, return_phi = False):
         self.eval()
 
         if schedule is None:
@@ -354,7 +354,7 @@ class ContinuousSBM(DiffusionModel):
             dummy_output = torch.zeros_like(x_t)
             return self.sde.reverse(x_t, t, dummy_output, sq_ps = sq_ps)[1]
         with torch.no_grad():
-            gen = solver.forward(sample, f, gdW, reverse_time = True)
+            gen = solver.forward(sample, f, gdW, reverse_time = True, verbose = verbose)
         if self.has_phi and return_phi:
             return gen, phi
         return gen

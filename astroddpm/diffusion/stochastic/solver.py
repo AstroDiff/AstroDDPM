@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import tqdm 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -44,7 +45,7 @@ class EulerMaruyama():
     def __init__(self, schedule):
         self.schedule = schedule
 
-    def forward(self, x_init, f, gdW, reverse_time = True):
+    def forward(self, x_init, f, gdW, reverse_time = True, verbose = False):
         """
         x: [batch_size, channel, height, width]
         f: [batch_size, channel, height, width] x [time] -> [batch_size, channel, height, width]
@@ -56,6 +57,8 @@ class EulerMaruyama():
         else:
             times = self.schedule
         x = x_init
+
+        progress_bar = tqdm.tqdm(total = len(times)-1, disable=not verbose)
         for i in range(len(times)-1):
             dt = times[i+1] - times[i]
             timesteps = times[i]*torch.ones(x.shape[0],1).to(x.device)
@@ -63,5 +66,6 @@ class EulerMaruyama():
             if x.isnan().any():
                 print("Nan encountered at time step {}".format(i))
                 break
+            progress_bar.update(1)
         return x
 
