@@ -100,7 +100,7 @@ class DiscreteSBM(DiffusionModel):
         if initial_timestep is None:
             tot_steps = self.sde.N
         else:
-            tot_steps = initial_timestep
+            tot_steps = initial_timestep.item()
 
         ## Generating loop
         with torch.no_grad():
