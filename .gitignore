@@ -1,6 +1,7 @@
 .vscode
 .python-version
 __pycache__
+jobs/
 
 *log
 venv
