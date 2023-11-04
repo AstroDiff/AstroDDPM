@@ -67,5 +67,7 @@ class EulerMaruyama():
                 print("Nan encountered at time step {}".format(i))
                 break
             progress_bar.update(1)
+        if reverse_time:
+            times = x.flip(0) ## flip back to the original time order
         return x
 
