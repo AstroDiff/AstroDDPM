@@ -1,0 +1,630 @@
+{
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_6_phi_beta_linear_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "linear"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 6,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32,
+                    16
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_6_phi_beta_linear_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_6_phi_beta_cosine_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "cosine"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 6,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32,
+                    16
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_6_phi_beta_cosine_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_10_phi_beta_linear_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "linear"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32,
+                    16
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_10_phi_beta_linear_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_10_phi_beta_cosine_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "cosine"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32,
+                    16
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_16_firstc_10_phi_beta_cosine_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_6_phi_beta_linear_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "linear"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 6,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_6_phi_beta_linear_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_6_phi_beta_cosine_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "cosine"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 6,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_6_phi_beta_cosine_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_10_phi_beta_linear_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "linear"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_10_phi_beta_linear_betamax_1.5"
+    },
+    "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_10_phi_beta_cosine_betamax_1.5": {
+        "diffusion_model": {
+            "sde": {
+                "type": "ContinuousVPSDE",
+                "beta_min": 0.1,
+                "beta_max": 1.5,
+                "N": 1000,
+                "beta_schedule": "cosine"
+            },
+            "network": {
+                "in_c": 1,
+                "out_c": 1,
+                "first_c": 10,
+                "sizes": [
+                    256,
+                    128,
+                    64,
+                    32
+                ],
+                "num_blocks": 1,
+                "n_steps": 1000,
+                "time_emb_dim": 100,
+                "dropout": 0,
+                "attention": [],
+                "normalisation": "GN",
+                "padding_mode": "circular",
+                "eps_norm": 1e-05,
+                "skiprescale": true,
+                "type": "ResUNet",
+                "discretization": "continuous",
+                "embedding_mode": "fourier",
+                "has_phi": true,
+                "phi_shape": 2,
+                "phi_embed_dim": 100
+            },
+            "type": "ContinuousSBM",
+            "ps": {
+                "type": "cmb_h_ombh2"
+            }
+        },
+        "dataloaders": {
+            "train_batch_size": 64,
+            "test_batch_size": 128,
+            "num_workers": 8,
+            "seed": 33,
+            "split": 0.1,
+            "dataset": {
+                "dir": "/mnt/home/dheurtel/ceph/01_data/CATS_I/",
+                "type": "npy files",
+                "transforms": [
+                    "Random_Rotate90"
+                ],
+                "name": "CATS_I"
+            },
+            "name": "CATS_I"
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 0.001,
+            "weight_decay": 0.0001
+        },
+        "scheduler": {
+            "type": "invsqrt",
+            "warmup": 100,
+            "maxlr": 0.0004,
+            "minlr": 4e-05,
+            "last_step": -1
+        },
+        "ckpt_epoch": 200,
+        "separate_ckpt": false,
+        "ckpt_dir": "/mnt/home/dheurtel/ceph/02_checkpoints",
+        "sample_epoch": 200,
+        "sample_dir": "/mnt/home/dheurtel/ceph/03_samples",
+        "sample_size": 8,
+        "results_size": 64,
+        "epochs": 15000,
+        "model_id": "ContinuousSBM_ContinuousVPSDE_I_BPROJ_bottleneck_32_firstc_10_phi_beta_cosine_betamax_1.5"
+    }
+}

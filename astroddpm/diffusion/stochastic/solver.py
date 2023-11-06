@@ -11,6 +11,14 @@ import tqdm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_schedule(schedule_type, **kwargs):
+    """
+    Returns a schedule of time steps for a differential equation solver (SDE or ODE)
+    Args:
+        schedule_type: str, type of schedule
+        **kwargs: additional arguments for the schedule
+    Returns:
+        schedule: torch.Tensor, schedule of time steps
+    """
     if schedule_type == 'linear':
         return linear_schedule(**kwargs)
     elif schedule_type == 'power_law':
@@ -19,6 +27,17 @@ def get_schedule(schedule_type, **kwargs):
         raise NotImplementedError
 
 def linear_schedule(**kwargs):
+    """
+    Returns a linear schedule of time steps for a differential equation solver (SDE or ODE)
+    **kwargs should contain the following keys:
+        t_min: float, minimum time step
+        t_max: float, maximum time step
+        n_iter: int, number of time steps
+    Args:
+        **kwargs: additional arguments for the schedule
+    Returns:
+        schedule: torch.Tensor, schedule of time steps
+        """
     ## TODO parrallelize this
     if 't_min' not in kwargs:
         kwargs['t_min'] = 1e-4
@@ -29,6 +48,18 @@ def linear_schedule(**kwargs):
     return torch.linspace(kwargs['t_min'], kwargs['t_max'], kwargs['n_iter'])
 
 def power_law_schedule(**kwargs):
+    """
+    Returns a power law schedule of time steps for a differential equation solver (SDE or ODE)
+    **kwargs should contain the following keys:
+        t_min: float, minimum time step
+        t_max: float, maximum time step
+        n_iter: int, number of time steps
+        power: float, power law exponent
+    Args:
+        **kwargs: additional arguments for the schedule
+    Returns:
+        schedule: torch.Tensor, schedule of time steps
+    """
     ## TODO parrallelize this
     if 't_min' not in kwargs:
         kwargs['t_min'] = 1e-4
@@ -42,14 +73,23 @@ def power_law_schedule(**kwargs):
     return torch.linspace(0,1,n_iter)**kwargs['power'] * (kwargs['t_max'] - kwargs['t_min']) + kwargs['t_min']
 
 class EulerMaruyama():
+    """
+    Euler-Maruyama method for solving stochastic differential equations
+    """
     def __init__(self, schedule):
         self.schedule = schedule
 
     def forward(self, x_init, f, gdW, reverse_time = True, verbose = False):
         """
-        x: [batch_size, channel, height, width]
-        f: [batch_size, channel, height, width] x [time] -> [batch_size, channel, height, width]
-        gdW : [batch_size, channel, height, width] x [time] -> [batch_size, channel, height, width]
+        Solves the SDE dx = f(x, t) dt + g(x, t) dW_t
+        Args:
+            x_init: torch.Tensor, initial value of x
+            f: function, drift term
+            gdW: function, diffusion term (should also contain the random part of the diffusion term, will only be multiplied by sqrt(dt) in the solver)
+            reverse_time: bool, whether to reverse the time schedule (used for backward SDEs)
+            verbose: bool, whether to print progress bar
+        Returns:
+            x: torch.Tensor, a sample from the SDE at the final time step
         """
         if reverse_time:
             times = self.schedule

@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
 ################################################################################
-# This file, part of AstroDDPM, is distributed under an MIT License. It defines several functions and classes
-# that are used to build a dataset and separate it into training and test sets (possibly with a validation set).
-# It relies on standard python librairies (os, glob, random, etc.) and on the pytorch library.
-# Datasets defined here are designed to parse and load numpy arrays of images or physical fields but can be easily
-# adapted to other formats (e.g. FITS files, etc.).
-# It is not yet optimized for large datasets/parallelization.
-
-################################################################################
 # Imports
 import os
 import random
@@ -24,7 +16,6 @@ import warnings
 
 ################################################################################
 ## Downloads
-
 
 ## TODO add __repr__ to all classes
 
@@ -76,6 +67,12 @@ class RandomRotate90(torch.nn.Module):
     def __init__(self):
         super().__init__()
     def forward(self, x):
+        ''''
+        Rotate the image by a multiple of 90 degrees randomly
+        Args:
+            x: tensor of shape (batch, channels, height, width)
+        Returns:
+            x: tensor of shape (batch, channels, height, width)'''
         if len(x.shape)==4:
             return torch.rot90(x, random.randint(0, 3), [2, 3])
         elif len(x.shape)==3:
@@ -152,6 +149,7 @@ def add_dataset(dataset_name, dataset_dir, transformations = None):
     pass
 
 class NPDataset(Dataset):
+    '''Custom dataset for npy files'''
     def __init__(self, config, file_list, transforms=None):
         super(NPDataset).__init__()
         self.config = config

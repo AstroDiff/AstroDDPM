@@ -3,7 +3,25 @@ from quantimpy import minkowski as mk
 import numpy as np
 import matplotlib.pyplot as plt
 
+##########################################################################################
+## Minkowski functionals: Original code by Mudur, Nayantara and Finkbeiner, Douglas P 
+## Authors of "Can denoising diffusion probabilistic models generate realistic astrophysical fields?""
+##########################################################################################
+
 def plot_mink_functionals(samplist, gs_vals, names, cols, savefig_dict={}):
+    """
+    Plot the Minkowski functionals for a list of samples
+    Args:
+        samplist: list of array of samples, each sample is a numpy array of shape (N, N, 1)
+        gs_vals: list of g values
+        names: list of names for the samples
+        cols: list of colors for the samples
+        savefig_dict: dict, contains the keys save_path and dpi
+    Returns:
+        sampwise_minkmean: list of numpy arrays of shape (len(gs_vals), 1), mean of the Minkowski functionals for each sample
+        sampwise_minkstd: list of numpy arrays of shape (len(gs_vals), 1), standard deviation of the Minkowski functionals for each sample
+    """
+    ## TODO check the docstring
     sampwise_minkmean  = []
     sampwise_minkstd = []
     for samp in samplist:

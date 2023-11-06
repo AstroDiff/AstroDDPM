@@ -6,6 +6,15 @@ from astroddpm.utils.plot import plot_and_save_lines
 from astroddpm.runners import get_samples
 
 def correl_fourrier(batch1, batch2 = None, use_gpu = True):
+    """
+    Computes the spatial correlation between two batches of images using the fourrier transform
+    Args:
+        batch1: tensor of shape (batch, channels, height, width)
+        batch2 (optional): tensor of shape (batch, channels, height, width)
+        use_gpu: bool, whether to use the gpu or not
+    Returns:
+        spatial correlation: tensor of shape (batch1, batch2, channels, height, width)
+    """
     device = torch.device("cuda" if (use_gpu and torch.cuda.is_available()) else "cpu")
     ## Only returns the real part of the correlation
     if batch2 is None:
@@ -21,6 +30,18 @@ def correl_fourrier(batch1, batch2 = None, use_gpu = True):
 
 
 def closest_pairs(batch1, batch2 = None, use_gpu = True, subset_of_pairs = None):
+    """
+    Computes the closest pairs between two batches of images using a modified L2 norm where we consider the closest two images are when one is shifted by a certain translation.
+
+    Used to check if the model is overfitting to the dataset or not and if samples are diverse enough.
+    Args:
+        batch1: tensor of shape (batch, channels, height, width)
+        batch2 (optional): tensor of shape (batch, channels, height, width)
+        use_gpu: bool, whether to use the gpu or not
+        subset_of_pairs (optional): int randomly selects a subset of pairs of size subset_of_pairs to compute the closest pairs (useful for large batches)
+    Returns:
+        closest_pairs: list of list of int, list of the closest pairs between the two batches. Each sublist contains the indices of the two closest pairs and the translation between them that corresponds to the minimum of the modified L2 norm.
+    """
     if subset_of_pairs is not None and isinstance(subset_of_pairs, int):
         subset_of_pairs = np.random.choice(batch1.shape[0], size = subset_of_pairs, replace = False)
     else:
@@ -58,6 +79,19 @@ def closest_pairs(batch1, batch2 = None, use_gpu = True, subset_of_pairs = None)
     return closest_pairs
 
 def plot_closest_pairs(batch1, batch2 = None, use_gpu = True, subset_of_pairs = None, num_to_plot = 8, save_file = None, label_list = None, title = None):
+    """
+    Plots the closest pairs between two batches of images using a modified L2 norm where we consider the closest two images are when one is shifted by a certain translation.
+    Uses the function closest_pairs to compute the closest pairs.
+    Args:
+        batch1: tensor of shape (batch, channels, height, width)
+        batch2 (optional): tensor of shape (batch, channels, height, width)
+        use_gpu: bool, whether to use the gpu or not
+        subset_of_pairs (optional): int randomly selects a subset of pairs of size subset_of_pairs to compute the closest pairs (useful for large batches)
+        num_to_plot: int, number of pairs to plot
+        save_file: str, path to save the plot
+        label_list: list of str, list of labels for the legend
+        title: str, title of the plot
+    """
     closest_pairs_ = np.array(closest_pairs(batch1, batch2, use_gpu, subset_of_pairs))
     if subset_of_pairs is not None and isinstance(subset_of_pairs, int):
         subset_of_pairs = np.random.choice(batch1.shape[0], size = subset_of_pairs, replace = False)
@@ -78,6 +112,15 @@ def plot_closest_pairs(batch1, batch2 = None, use_gpu = True, subset_of_pairs = 
     plot_and_save_lines([batch1_to_plot, batch2_to_plot], save_file = save_file, label_list=label_list, title=title)
 
 def plot_closest_pairs_samples_dataset(diffuser, num_to_plot = 8, save_file = None, label_list = None, title_list = None):
+    """
+    Plots the closest pairs between the generated samples and the dataset elements and the closest pairs among the generated samples.
+    Args:
+        diffuser: Diffuser object
+        num_to_plot: int, number of pairs to plot
+        save_file: str, path to save the plot
+        label_list: list of str, list of labels for the legend
+        title_list: list of str, list of titles for the plots
+    """
     ## Get results from the sample_dir corresponding to the diffuser
     samples = get_samples(diffuser)
     samples = torch.from_numpy(samples)
@@ -103,6 +146,11 @@ def plot_closest_pairs_samples_dataset(diffuser, num_to_plot = 8, save_file = No
     plot_closest_pairs(samples, num_to_plot=num_to_plot, save_file = save_file, label_list = label_list, title = title_1)
 
 def plot_closest_pairs_sanity_check(samples):
+    """
+    Plots the closest pairs among the samples. Sanity check, should return pairs of identical images.
+    Args:
+        samples: tensor of shape (batch, channels, height, width)
+    """
     if len(samples.shape) == 3:
         samples = samples.unsqueeze(1)
     elif len(samples.shape) > 4:

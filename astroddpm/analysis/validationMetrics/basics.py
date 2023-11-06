@@ -5,6 +5,16 @@ import torch
 from astroddpm.runners import get_samples
 
 def plot_hist_samples_dataset(diffuser, samples = None, title = None, legend = True, max_num_samples = 100, savefig = None):
+    """
+    Plots the histogram of the samples and the dataset elements.
+    Args:
+        diffuser: Diffuser object
+        samples: tensor of shape (batch, channels, height, width), if None, the samples are retrieved from the sample_dir corresponding to the diffuser
+        title: str, title of the plot
+        legend: bool, whether to show the legend
+        max_num_samples: int, maximum number of samples to plot
+        savefig: str, path to save the plot
+    """
     if samples is None:
         ## Get results from the sample_dir corresponding to the diffuser
         samples = get_samples(diffuser)
@@ -28,6 +38,15 @@ def plot_hist_samples_dataset(diffuser, samples = None, title = None, legend = T
     plt.show()
 
 def wasserstein(diffuser, samples = None, max_num_samples = 100):
+    """
+    Computes the wasserstein distance between the samples and the dataset elements.
+    Args:
+        diffuser: Diffuser object
+        samples: tensor of shape (batch, channels, height, width), if None, the samples are retrieved from the sample_dir corresponding to the diffuser
+        max_num_samples: int, maximum number of samples to use
+    Returns:
+        wasserstein: float, wasserstein distance between the samples and the dataset elements (marginally over the pixel intensities)
+    """
     if samples is None:
         ## Get results from the sample_dir corresponding to the diffuser
         samples = get_samples(diffuser)
