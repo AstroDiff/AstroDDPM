@@ -8,7 +8,7 @@ from torch.nn import functional as F
 import torchcubicspline
 import camb
 from pixell import enmap, utils
-
+from .utils import unnormalize_phi
 
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, n_hidden_layers=1):
@@ -33,7 +33,7 @@ class MLP(nn.Module):
 
 class CMBPS(nn.Module):
 
-    def __init__(self, norm_phi=True):
+    def __init__(self, norm_input_phi='compact'):
         super().__init__()
 
         # MLP
@@ -51,49 +51,63 @@ class CMBPS(nn.Module):
         for i in range(2):
             wn_iso += np.moveaxis(wn, 0, i) ** 2
         wn_iso = np.sqrt(wn_iso)
-        indices = np.fft.fftshift(wn_iso).diagonal()[128:] ## The value of the wavenumbers along which we have the power spectrum diagonal
-        self.register_buffer("torch_indices", torch.tensor(indices))
-        self.register_buffer("torch_wn_iso", torch.tensor(wn_iso, dtype=torch.float32))
+        wn_iso_diag = np.fft.fftshift(wn_iso).diagonal()[128:] ## The value of the wavenumbers along which we have the power spectrum diagonal
+        
+        #
+        # Interpolation of the power spectrum diagonal
+        #
+
+        # Compute the two closest diagonal wavenumbers for each isotropic wavenumber
+        wn_iso_deltas = np.expand_dims(wn_iso, axis=-1) - wn_iso_diag # Compute all differences between the 2d grid of isotropic wavenumbers and the diagonal wavenumbers
+        wn_iso_sort_indices = np.argsort(np.abs(wn_iso_deltas), axis=-1)[:, :, :2] # Sort the differences by their absolute value and keep the two smallest ones
+        wn_iso_two_closest_diag = wn_iso_diag[wn_iso_sort_indices] # Keep the two closest diagonal wavenumbers for each isotropic wavenumber
+
+        # Reorder indices to have the smallest wavenumber first
+        wn_iso_sort_indices = np.sort(wn_iso_sort_indices, axis=-1)
+        wn_iso_two_closest_diag = np.sort(wn_iso_two_closest_diag, axis=-1)
+
+        # Note that isotropic wavenumbers are not necessarily all included between the two closest diagonal wavenumbers
+        # cf print(np.argwhere(wn_iso_two_closest_diag[:, :, 0] > wn_iso); print(np.argwhere(wn_iso_two_closest_diag[:, :, 1] < wn_iso);
+
+        # Get distances between the two closest diagonal wavenumbers
+        wn_iso_d1 = wn_iso_two_closest_diag[:, :, 1] - wn_iso
+        wn_iso_d2 = wn_iso - wn_iso_two_closest_diag[:, :, 0]
+
+        # Compute the weights for the two closest diagonal wavenumbers
+        wn_iso_w1 = torch.tensor(wn_iso_d1 / (wn_iso_d1 + wn_iso_d2))
+        wn_iso_w2 = torch.tensor(wn_iso_d2 / (wn_iso_d1 + wn_iso_d2))
+        wn_iso_idx1 = torch.tensor(wn_iso_sort_indices[:, :, 0])
+        wn_iso_idx2 = torch.tensor(wn_iso_sort_indices[:, :, 1])
+        
+        # self.register_buffer("torch_indices", torch.tensor(wn_iso_diag))
+        # self.register_buffer("torch_wn_iso", torch.tensor(wn_iso, dtype=torch.float32))
+
+        self.register_buffer("wn_iso_w1", wn_iso_w1)
+        self.register_buffer("wn_iso_w2", wn_iso_w2)
+        self.register_buffer("wn_iso_idx1", wn_iso_idx1)
+        self.register_buffer("wn_iso_idx2", wn_iso_idx2)
 
         # Normalization of phi
-        self.norm_phi = norm_phi
-        self.register_buffer("min_phi", torch.tensor([50, 7.5e-3]))
-        self.register_buffer("dphi", torch.tensor([40, 49.2e-3]))
+        self.norm_input_phi = norm_input_phi
     
     def forward(self, phi):
-        if self.norm_phi:
-            #print(self.dphi, self.min_phi)
-            phi = phi*self.dphi + self.min_phi
-        phi = (phi - torch.tensor([70, 32e-3]).to(phi.device))/torch.tensor([20,25e-3]).to(phi.device)
-        torch_diagonals = self.mlp(phi) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
-        if phi.ndim == 1:
-            torch_diagonals = torch_diagonals.unsqueeze(0)
-        torch_diagonals = torch.moveaxis(torch_diagonals, -1, 0) ## Shape (128, batch_size) to be able to use torchcubicspline
-        spline = torchcubicspline.NaturalCubicSpline(torchcubicspline.natural_cubic_spline_coeffs(self.torch_indices, torch_diagonals))
-        return torch.exp(torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)) / 12661 # 12661 is the mean PS at fiducial cosmology
-    
-def normalize_phi(phi):
-    """ Normalize phi from [50, 90]x[0.0075, 0.0567] to [0, 1]x[0, 1]"""
-    min_phi = torch.tensor([50, 7.5e-3]).to(phi.device)
-    dphi = torch.tensor([40, 49.2e-3]).to(phi.device)
-    return (phi - min_phi) / dphi
+        phi = unnormalize_phi(phi, mode=self.norm_input_phi)
+        phi = (phi - torch.tensor([70, 32e-3]).to(phi.device))/torch.tensor([20,25e-3]).to(phi.device) # Normalization of the input to the MLP
+        ps_diagonals = self.mlp(phi) ## Shape (batch_size, 128) (128 is the number of wavenumbers along which we have the power spectrum diagonal)
+        if ps_diagonals.ndim == 1:
+            ps_diagonals = ps_diagonals.unsqueeze(0)
 
-def unnormalize_phi(phi):
-    """ Unnormalize phi from [0, 1]x[0, 1] to [50, 90]x[0.0075, 0.0567]"""
-    min_phi = torch.tensor([50, 7.5e-3]).to(phi.device)
-    dphi = torch.tensor([40, 49.2e-3]).to(phi.device)
-    return phi * dphi + min_phi
+        ps_interpolated = self.wn_iso_w1 * ps_diagonals[:, self.wn_iso_idx1] + self.wn_iso_w2 * ps_diagonals[:, self.wn_iso_idx2]
 
-class CMBPS_norm(CMBPS):
-    def __init__(self, norm_phi=True):
-        super().__init__()
-        self.norm_phi = norm_phi
+        # torch_diagonals = torch.moveaxis(ps_diagonals, -1, 0) ## Shape (128, batch_size) to be able to use torchcubicspline
+        # print(self.torch_wn_iso.shape, self.torch_indices.shape, torch_diagonals.shape)
+        # spline = torchcubicspline.NaturalCubicSpline(torchcubicspline.natural_cubic_spline_coeffs(self.torch_indices, torch_diagonals))
+        # print(spline.evaluate(self.torch_wn_iso).shape)
+        # ret = torch.exp(torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)) / 12661 # 12661 is the mean PS at fiducial cosmology
+        # return ret
 
-    
-    def forward(self, phi):
-        if self.norm_phi:
-            phi = phi * self.dphi + self.min_phi
-        return super().forward(phi)
+        return torch.exp(ps_interpolated) / 12661 # 12661 is the mean PS at fiducial cosmology
+
 
 def patch_shape_and_wcs(Npix, res):
     ndegree_patch = res * Npix / 60
