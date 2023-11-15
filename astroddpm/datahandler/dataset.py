@@ -150,15 +150,22 @@ def add_dataset(dataset_name, dataset_dir, transformations = None):
 
 class NPDataset(Dataset):
     '''Custom dataset for npy files'''
-    def __init__(self, config, file_list, transforms=None):
+    def __init__(self, config = None, file_list = None, dir = None, transforms=None):
         super(NPDataset).__init__()
         self.config = config
         try:
             self.dir = config["dir"]
         except:
-            raise ValueError("No directory specified in config")
+            if dir is None:
+                raise ValueError("No directory specified in config")
+            else:
+                self.dir = dir
         self.transforms = transforms
-        self.file_list = file_list
+        if file_list is None:
+            self.file_list = os.listdir(self.dir)
+            self.file_list.sort()
+        else:
+            self.file_list = file_list
 
     def __len__(self):
         return len(self.file_list)
