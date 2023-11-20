@@ -82,18 +82,3 @@ def log_likelihood_eps_phi(phi, eps, ps_model):
     term_logdet = -0.5 * torch.sum(torch.log(ps), dim=(-1, -2)) # The determinant is the product of the diagonal elements of the PS
     term_x = -0.5 * torch.sum((torch.abs(xf).pow(2)) / ps, dim=(-1, -2))/eps_dim # We divide by eps_dim because of the normalization of the FFT
     return term_pi + term_logdet + term_x
-
-def halton_sequence(b):
-    """Generator function for Halton sequence in base b."""
-    n, d = 0, 1
-    while True:
-        x = d - n
-        if x == 1:
-            n = 1
-            d *= b
-        else:
-            y = d // b
-            while x <= y:
-                y //= b
-            n = (b + 1) * y - x
-        yield n / d

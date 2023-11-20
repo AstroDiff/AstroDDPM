@@ -4,9 +4,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from .utils import halton_sequence
-
-
 class DualAveragingStepSize():
     """ Dual averaging step size adaptation (Nesterov 2009). """
 
@@ -206,13 +203,13 @@ class HMC():
         """
         self.collision_fn = collision_fn
 
-    def leapfrog(self, q, p, N, step_size):
+    def leapfrog(self, q, p, nleap, step_size):
         """Leapfrog integrator.
 
         Args:
             q (torch.Tensor): Position vector.
             p (torch.Tensor): Momentum vector.
-            N (int): Number of leapfrog steps.
+            nleap (int or (int, int)): Number of leapfrog steps (int), or range for the random draw of the number of leapfrog steps (tuple of (int, int)).
             step_size (torch.Tensor): Step sizes per chain.
 
         Returns:
@@ -220,6 +217,12 @@ class HMC():
         """
         self.leapcount += 1
         s = step_size.unsqueeze(-1)
+
+        assert isinstance(nleap, int) or isinstance(nleap, tuple)
+        if isinstance(nleap, tuple):
+            N = np.random.randint(nleap[0], nleap[1]+1)
+        else:
+            N = nleap
  
         p = p - 0.5 * s * self.V_g(q)
         for i in range(N - 1):
@@ -272,12 +275,12 @@ class HMC():
         
         return qq, pp, acc, torch.stack([H0, H1], dim=-1)
 
-    def step(self, q, nleap, step_size, random_min_max_nleap=None):
+    def step(self, q, nleap, step_size):
         """Performs a single HMC step.
 
         Args:
             q (torch.Tensor): Position vector.
-            nleap (torch.Tensor): Number of leapfrog steps.
+            nleap (int or (int, int)): Number of leapfrog steps (int), or range for the random draw of the number of leapfrog steps (tuple of (int, int)).
             step_size (torch.Tensor): Step sizes per chain.
 
         Returns:
@@ -287,142 +290,18 @@ class HMC():
         p = torch.randn(q.shape, device=q.device, dtype=self.precision)
         if self.mass_matrix_sqrt is not None:
             p = (self.mass_matrix_sqrt @ p.unsqueeze(-1)).squeeze(-1)
-        if random_min_max_nleap is not None:
-            nleap = np.random.randint(random_min_max_nleap[0], random_min_max_nleap[1]+1)
         q1, p1 = self.leapfrog(q, p, nleap, step_size)
         q, p, accepted, Hs = self.metropolis(q, p, q1, p1)
         return q, p, accepted, Hs, torch.tensor([self.Hcount, self.Vgcount, self.leapcount])
-        
-    
-    def step_nuts(self, q, step_size):
-        """Performs a single HMC step using NUTS.
 
-        Args:
-            q (torch.Tensor): Position vector.
-            step_size (torch.Tensor): Step sizes per chain.
-
-        Returns:
-            (torch.Tensor,)*5: Position, momentum, acceptance rate,
-            Hamiltonians at (q0, p0) and (q1, p1), misc counts after HMC step.
-        """
-        batch_shape = q.shape[:-1] # Shape of the batch (last dimension should be the dimension of the parameter space)
-
-        p = torch.randn(q.shape, device=q.device, dtype=self.precision)
-        if self.mass_matrix_sqrt is not None:
-            p = (self.mass_matrix_sqrt @ p.unsqueeze(-1)).squeeze(-1)
-        u = torch.rand(batch_shape, device=q.device, dtype=self.precision)*torch.exp(-self.H(q, p))
-        print(u.shape, self.H(q, p).shape)
-
-        def build_tree(q, p, u, v, j, step_size):
-            Delta_max = 1000
-
-            qm, pm = q.clone(), p.clone()
-            qp, pp = q.clone(), p.clone()
-            q1 = q.clone()
-            n = torch.zeros(q.shape[0], device=q.device, dtype=torch.int)
-            s = torch.ones(q.shape[0], device=q.device, dtype=torch.int)
-
-            j_zero = j == 0
-            j_else = j != 0
-
-            #
-            # If j == 0, take one leapfrog step in the direction v
-            #
-            print(q[j_zero].shape, p[j_zero].shape, v[j_zero].shape, step_size[j_zero].shape)
-            qtmp, ptmp = self.leapfrog(q[j_zero], p[j_zero], 1, step_size[j_zero]*v[j_zero]) # TODO: adaptat indices of x when calling log_prob
-            qm[j_zero], pm[j_zero] = qtmp, ptmp
-            qp[j_zero], pp[j_zero] = qtmp, ptmp
-            q1[j_zero] = qtmp
-            n[j_zero] = u[j_zero] < torch.exp(-self.H(qtmp, ptmp))
-            s[j_zero] = Delta_max - torch.log(u[j_zero]) < self.H(qtmp, ptmp)
-
-            #
-            # If j != 0, build the left and right subtrees
-            #
-
-            qm[j_else], pm[j_else], qp[j_else], pp[j_else], qp[j_else], n[j_else], s[j_else] = build_tree(q[j_else],
-                                                                                                   p[j_else],
-                                                                                                   u[j_else],
-                                                                                                   v[j_else],
-                                                                                                   j[j_else]-1,
-                                                                                                   step_size[j_else])
-            s_one = s[j_else] == 1
-            v_fwd = v[j_else][s_one] == 1
-            v_bwd = v[j_else][s_one] == -1
-            n2 = torch.zeros_like(n[j_else][s_one])
-            s2 = torch.zeros_like(s[j_else][s_one])
-            q2 = torch.zeros_like(q[j_else][s_one])
-            qm[j_else][s_one][v_bwd], pm[j_else][s_one][v_bwd], _, _, q2[v_bwd], n2[v_bwd], s2[v_bwd] = build_tree(qm[j_else][s_one][v_bwd],
-                                                                                                                pm[j_else][s_one][v_bwd],
-                                                                                                                u[j_else][s_one][v_bwd],
-                                                                                                                v[j_else][s_one][v_bwd],
-                                                                                                                j[j_else][s_one][v_bwd]-1,
-                                                                                                                step_size[j_else][s_one][v_bwd])
-            _, _, qp[j_else][s_one][v_fwd], pp[j_else][s_one][v_fwd], q2[v_fwd], n2[v_fwd], s2[v_fwd] = build_tree(qp[j_else][s_one][v_fwd],
-                                                                                                                pp[j_else][s_one][v_fwd],
-                                                                                                                u[j_else][s_one][v_fwd],
-                                                                                                                v[j_else][s_one][v_fwd],
-                                                                                                                j[j_else][s_one][v_fwd]-1,
-                                                                                                                step_size[j_else][s_one][v_fwd])
-
-            cond = torch.rand(n2.shape, device=q.device, dtype=self.precision) < n2 / (n2 + n[j_else][s_one])
-            q1[j_else][s_one][cond] = q2[cond]
-            n[j_else][s_one] += n2
-            dotp1 = ((qp[j_else][s_one] - qm[j_else][s_one])*pm[j_else][s_one]).sum(-1)
-            dotp2 = ((qp[j_else][s_one] - qm[j_else][s_one])*pp[j_else][s_one]).sum(-1)
-            s[j_else][s_one] = s2 * (dotp1 >= 0).int() * (dotp2 >= 0).int()
-
-            return qm, pm, qp, pp, q1, n, s
-
-        pm, pp = p.clone(), p.clone()
-        qm, qp = q.clone(), q.clone()
-        s = torch.ones(batch_shape, device=q.device, dtype=torch.bool)
-        j = torch.zeros(batch_shape, device=q.device, dtype=torch.int)
-        n = torch.zeros(batch_shape, device=q.device, dtype=torch.int)
-        while s.any():
-            v = torch.randint(0, 2, batch_shape, device=q.device)*2 - 1 # Randomly choose a direction (1 or -1)
-
-            s_one = s == 1
-            v_bwd = v == -1
-            v_fwd = v == 1
-
-            q1 = torch.zeros_like(q[s_one])
-            n1 = torch.zeros_like(n[s_one])
-            s1 = torch.zeros_like(s[s_one])
-
-            qm[s_one][v_bwd], pm[s_one][v_bwd], _, _, q1[v_bwd], n1[v_bwd], s1[v_bwd] = build_tree(qm[s_one][v_bwd],
-                                                                                                    pm[s_one][v_bwd],
-                                                                                                    u[s_one][v_bwd],
-                                                                                                    v[s_one][v_bwd],
-                                                                                                    j[s_one][v_bwd],
-                                                                                                    step_size[s_one][v_bwd])
-            _, _, qp[s_one][v_fwd], pp[s_one][v_fwd], q1[v_fwd], n1[v_fwd], s1[v_fwd] = build_tree(qp[s_one][v_fwd],
-                                                                                                    pp[s_one][v_fwd],
-                                                                                                    u[s_one][v_fwd],
-                                                                                                    v[s_one][v_fwd],
-                                                                                                    j[s_one][v_fwd],
-                                                                                                    step_size[s_one][v_fwd])
-            cond = torch.rand(n1.shape, device=q.device, dtype=self.precision) < torch.minimum(1, n1 / n[s_one])
-            q[s_one][cond] = q1[cond]
-
-            n[s_one] += n1
-            dotp1 = ((qp[s_one] - qm[s_one])*pm[s_one]).sum(-1)
-            dotp2 = ((qp[s_one] - qm[s_one])*pp[s_one]).sum(-1)
-            s[s_one] = s1 * (dotp1 >= 0).int() * (dotp2 >= 0).int()
-            j[s_one] += 1
-
-        print(q.shape)
-
-        return q, p, None, None, torch.tensor([self.Hcount, self.Vgcount, self.leapcount])
-
-    def adapt_stepsize(self, q, step_size, epsadapt, nleap, random_min_max_nleap=None):
+    def adapt_stepsize(self, q, step_size, epsadapt, nleap):
         """ Dual averaging step size adaptation.
 
         Args:
             q (torch.Tensor): Position vector
             step_size (torch.Tensor): Intial step size.
             epsadapt (int): Number of iterations for step size adaptation.
-            nleap (int): Number of leapfrog steps per HMC step.
+            nleap (int or (int, int)): Number of leapfrog steps (int), or range for the random draw of the number of leapfrog steps (tuple of (int, int)).
 
         Returns:
             (torch.Tensor, torch.Tensor): Updated position vector, step size.
@@ -433,7 +312,7 @@ class HMC():
         q_list = [] # We save the positions to estimate the inverse mass matrix at half the iterations
 
         for i in tqdm(range((epsadapt))):
-            q, p, acc, Hs, count = self.step(q, nleap, step_size, random_min_max_nleap=random_min_max_nleap)
+            q, p, acc, Hs, count = self.step(q, nleap, step_size)
             q_list.append(q)
 
             prob = torch.exp(Hs[...,0] - Hs[...,1])
@@ -468,8 +347,6 @@ class HMC():
                skipburn=True,
                epsadapt=0,
                verbose=False,
-               nuts=False,
-               random_min_max_nleap=None,
                ret_side_quantities=False):
         """Performs HMC sampling.
 
@@ -478,7 +355,7 @@ class HMC():
             step_size (float, optional): Step size. If no adaptive step size Defaults to 0.01.
             nsamples (int, optional): Number of samples. Defaults to 20.
             burnin (int, optional): Number of burn-in steps. Defaults to 10.
-            nleap (int, optional): Number of leapfrog steps per HMC step. Defaults to 30.
+            nleap (int or (int, int)): Number of leapfrog steps per HMC step (int), or range for the random draw of the number of leapfrog steps (tuple of (int, int)).
             skipburn (bool, optional): Should we save burning samples? Defaults to True.
             epsadapt (int, optional): Epsilon adapt parameter. Defaults to 0.
             verbose (bool, optional): Verbose mode. Defaults to False.
@@ -503,90 +380,10 @@ class HMC():
         counts_list = []
 
         if epsadapt > 0:
-            q, step_size = self.adapt_stepsize(q, step_size, epsadapt, nleap, random_min_max_nleap=random_min_max_nleap)
+            q, step_size = self.adapt_stepsize(q, step_size, epsadapt, nleap)
             self.step_size = step_size
         for i in tqdm(range(nsamples + burnin), disable=not verbose):
-            if nuts:
-                q, p, acc, Hs, count = self.step_nuts(q, step_size)
-            else:
-                q, p, acc, Hs, count = self.step(q, nleap, step_size, random_min_max_nleap=random_min_max_nleap)
-            accepts_list.append(acc)
-            if (skipburn and (i >= burnin)) or not skipburn:
-                samples_list.append(q)
-                Hs_list.append(Hs)
-                counts_list.append(count)
-
-        # To torch tensors
-        samples_list = torch.stack(samples_list, dim=-2)
-        accepts_list = torch.stack(accepts_list, dim=-1)
-        Hs_list = torch.stack(Hs_list, dim=-2)
-        counts_list = torch.stack(counts_list, dim=-2)
-        
-        if ret_side_quantities:
-            return samples_list, accepts_list, Hs_list, counts_list
-        else:
-            return samples_list
-    
-    def sample_chess(self, q,
-                    step_size = 0.01,
-                    nsamples=20,
-                    burnin=10,
-                    skipburn=True,
-                    verbose=False,
-                    ret_side_quantities=False):
-        """Performs HMC sampling with ChessHMC.
-
-        Args:
-            q (torch.Tensor): Position vector. Possible shapes are (nchains, ndim) or (ndim).
-            step_size (float, optional): Step size. If no adaptive step size Defaults to 0.01.
-            nsamples (int, optional): Number of samples. Defaults to 20.
-            burnin (int, optional): Number of burn-in steps. Defaults to 10.
-            skipburn (bool, optional): Should we save burning samples? Defaults to True.
-            verbose (bool, optional): Verbose mode. Defaults to False.
-            ret_side_quantities (bool, optional): Should we return side quantities? Defaults to False.
-
-        Returns:
-            Sampler: Sampler object.
-        """
-        if q.ndim == 1: q = q.unsqueeze(0) # We add a chain dimension if there is none.
-        assert q.ndim == 2, "q must be 2D" # Shape of q is (nchains, ndim)
-
-        self.reset_counters()
-
-        q = q.to(self.precision)
-        
-        step_size = step_size * torch.ones((q.shape[0]), device=q.device, dtype=self.precision)
-
-        # We store the samples, acceptance rates, Hamiltonian values, and misc counts
-        samples_list = []
-        accepts_list = []
-        Hs_list = []
-        counts_list = []
-
-        # Halton sequence
-        halton_it = halton_sequence(2)
-
-        T = step_size.clone()
-
-        for i in tqdm(range(nsamples + burnin), disable=not verbose):
-            batch_dim = q.shape[0]
-            p = torch.randn(q.shape, device=q.device, dtype=self.precision)
-            if self.mass_matrix_sqrt is not None:
-                p = (self.mass_matrix_sqrt @ p.unsqueeze(-1)).squeeze(-1)
-            h = iter(halton_it)
-
-            # Set jittered trajectory length
-            T = h*step_size
-
-            # Compute HMC proposal
-            q1, p1 = self.leapfrog(q, p, (T / step_size).int().max(), step_size)
-
-            # Compute accept probabilities
-            H0 = self.H(q, p)
-            H1 = self.H(q1, p1)
-
-
-
+            q, p, acc, Hs, count = self.step(q, nleap, step_size)
             accepts_list.append(acc)
             if (skipburn and (i >= burnin)) or not skipburn:
                 samples_list.append(q)

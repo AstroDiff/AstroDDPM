@@ -78,9 +78,6 @@ class CMBPS(nn.Module):
         wn_iso_w2 = torch.tensor(wn_iso_d2 / (wn_iso_d1 + wn_iso_d2))
         wn_iso_idx1 = torch.tensor(wn_iso_sort_indices[:, :, 0])
         wn_iso_idx2 = torch.tensor(wn_iso_sort_indices[:, :, 1])
-        
-        # self.register_buffer("torch_indices", torch.tensor(wn_iso_diag))
-        # self.register_buffer("torch_wn_iso", torch.tensor(wn_iso, dtype=torch.float32))
 
         self.register_buffer("wn_iso_w1", wn_iso_w1)
         self.register_buffer("wn_iso_w2", wn_iso_w2)
@@ -98,13 +95,6 @@ class CMBPS(nn.Module):
             ps_diagonals = ps_diagonals.unsqueeze(0)
 
         ps_interpolated = self.wn_iso_w1 * ps_diagonals[:, self.wn_iso_idx1] + self.wn_iso_w2 * ps_diagonals[:, self.wn_iso_idx2]
-
-        # torch_diagonals = torch.moveaxis(ps_diagonals, -1, 0) ## Shape (128, batch_size) to be able to use torchcubicspline
-        # print(self.torch_wn_iso.shape, self.torch_indices.shape, torch_diagonals.shape)
-        # spline = torchcubicspline.NaturalCubicSpline(torchcubicspline.natural_cubic_spline_coeffs(self.torch_indices, torch_diagonals))
-        # print(spline.evaluate(self.torch_wn_iso).shape)
-        # ret = torch.exp(torch.moveaxis(spline.evaluate(self.torch_wn_iso), -1, 0)) / 12661 # 12661 is the mean PS at fiducial cosmology
-        # return ret
 
         return torch.exp(ps_interpolated) / 12661 # 12661 is the mean PS at fiducial cosmology
 
