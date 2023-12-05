@@ -1,4 +1,6 @@
-# GEMOA: GEnerative MOdeling for Astrophysical fields
+# AstroDDPM : A package for diffusion models in astrophysics and cosmology (WORK IN PROGRESS, PACKAGE TO BE DRASTICALLY CHANGED)
+
+This is work in progress, the package will change, especially the part that manages checkpointing, callbacks during training, version and configuration archival...
 
 This repository contains all the code related to a projet to use diffusions and score based models to generate realistic astrophysical fields with matching statistics. Ultimately, such models could be used as efficient priors or, using the computed score, conditionnal generators.
 
@@ -7,9 +9,9 @@ This repository contains all the code related to a projet to use diffusions and 
 
 ## TODO 
 
-- [ ] decide how datasets are managed for the wider audience (@fi & outside) (and ckpts too)
+- [X] ~decide how datasets are managed for the wider audience (@fi & outside) (and ckpts too)~ -> CKPT are small enough to be distributed on github. The raw dataset is already available online.
 - [ ] develop fine-tune
-- [ ] solidify resume training
+- [ ] solidify resume training -> maybe use Torch Lightning
 - [X] ~translate analysis tools & older separations tools~
 - [X] ~add a verbose option for training~
 - [X] ~verify how models are saved to the local MODELS.json~ 
@@ -20,9 +22,9 @@ This repository contains all the code related to a projet to use diffusions and 
 - [ ] Add an EMA option
 - [X] ~Complete requirements.txt~ with version
 - [X] ~Manage location dependent links in setup.py~ Don't think we need to.
-- [ ] Option for parallel training? Test first the inference with torch.DataParallel
+- [ ] Option for parallel training? Test first the inference with torch.DataParallel -> use Torch Lightning?
 - [ ] Logging on WandB or Tensorboard
-- [ ] ~Try something akin to GibbsDDRM (partially collapsed gibbs sampling)(DDRM, PIGDM...later)~ Provide inference tools in a notebook
+- [ ] ~Try something akin to GibbsDDRM (partially collapsed gibbs sampling)(DDRM, PIGDM...later)~ Provide inference tools in a notebook (a clean notebook...)
 
 ## How to use it
 
