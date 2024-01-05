@@ -1,25 +1,18 @@
 ## Standard imports
-import numpy as np
-import matplotlib.pyplot as plt
 import os
-import json
 import torch
-import astroddpm
 import tqdm
 
 ## Relative imports
 from astroddpm.runners import Diffuser, config_from_id, get_samples
-from astroddpm.analysis.validationMetrics import powerSpectrum, minkowskiFunctional, basics
-from astroddpm.analysis import overfitting_check
-from astroddpm.utils.plot import check_nearest_epoch, plot_losses, check_training_samples, plot_comparaison
 from astroddpm.diffusion.dm import DiscreteSBM
-from astroddpm.diffusion.stochastic.sde import DiscreteVPSDE, DiscreteSDE, ContinuousSDE, ContinuousVPSDE
+from astroddpm.diffusion.stochastic.sde import DiscreteVPSDE, ContinuousSDE
 from astroddpm.diffusion.stochastic.solver import get_schedule
 from astroddpm.diffusion.models.network import ResUNet
-import astroddpm.utils.colormap_custom 
-import arviz as az
 
-from cmb_hmc.hmc_torch import HMC
+from inference.cmb_ps import CMBPS
+from inference.utils import unnormalize_phi, normalize_phi, log_prior_phi, sample_prior_phi, log_likelihood_eps_phi, get_phi_bounds
+from inference.hmc import HMC
 
 import argparse
 
@@ -40,8 +33,15 @@ NUM_CHAIN = args.num_chain
 NUM_SAMPLES = args.num_samples
 NOISE_LEVEL = args.noise_level
 BURNIN_MCMC = 40
+BURNIN_HEURISTIC = 1
 
-CKPT_FREQ = 50
+CKPT_FREQ = 20
+
+save_path_dir = os.path.dirname(args.save_path)
+os.makedirs(save_path_dir, exist_ok=True)
+
+norm_phi_mode = 'compact'               # Normalization mode for phi among ['compact', 'inf', None]
+phi_min, phi_max = get_phi_bounds()     # Bounds on phi (unnormalized)
 
 placeholder_dm = DiscreteSBM(DiscreteVPSDE(1000), ResUNet())
 diffuser = Diffuser(placeholder_dm)
@@ -52,47 +52,21 @@ print(f"Time step chosen for noise level {NOISE_LEVEL}: {TIME_STEP}")
 
 TIME_STEP = TIME_STEP.to(device)
 
-ps_model = diffuser.diffmodel.ps
+ps_model = CMBPS(norm_input_phi=norm_phi_mode).to(device)
 
-def sample_prior(n):
-    """
-    Sample from the (normalized) prior distribution.
-    phi = (H0, Obh2) with H0 ~ U(-1, 1), Obh2 ~ U(-1, 1)
-    (unnormalized prior is H0 ~ U(50, 90), Obh2 ~ U(0.0075, 0.0567))
-    """
-    phi = 2*torch.rand(n, 2).to(device)-1
-    return phi
+#
+# Prior, likelihood, and posterior functions
+#
 
-def log_likelihood(rphi, x):
-    """
-    Compute the log likelihood of the Gaussian model.
-    """
-    x_dim = x.shape[-1]*x.shape[-2]
+sample_prior = lambda n: sample_prior_phi(n, norm=norm_phi_mode, device=device)
+log_likelihood = lambda phi, x: log_likelihood_eps_phi(phi, x, ps_model)
+log_prior = lambda phi: log_prior_phi(phi, norm=norm_phi_mode)
 
-    ps = ps_model(rphi, to_rescale = False)
-    xf = torch.fft.fft2(x)
-
-    term_pi = -(x_dim/2) * np.log(2*np.pi)
-    term_logdet = -1/2*torch.sum(torch.log(ps), dim=(-1, -2, -3)) # The determinant is the product of the diagonal elements of the PS
-    term_x = -1/2*torch.sum(1/ps*torch.abs(xf)**2, dim=(-1, -2, -3))/x_dim # We divide by x_dim because of the normalization of the FFT
-
-    return term_pi + term_logdet + term_x
-
-def log_prior(rphi):
-    """
-    Compute the log (normalized) prior of the parameters.
-    """
-    H0, Obh2 = rphi[..., 0], rphi[..., 1]
-    term_H0 = torch.log(torch.logical_and(H0 >= -1.0, H0 <= 1.0).float()/2.0)
-    term_Obh2 = torch.log(torch.logical_and(Obh2 >= -1.0, Obh2 <= 1.0).float()/2.0)
-    return term_H0 + term_Obh2
-
-def log_posterior(rphi, x):
+def log_posterior(phi, x):
     """
     Compute the log posterior of the parameters (not normalized by the evidence).
     """
-    return log_likelihood(rphi, x) + log_prior(rphi)
-
+    return log_likelihood(phi, x) + log_prior(phi)
 
 timesteps = TIME_STEP * torch.ones(NUM_CHAIN, dtype=torch.int32).to(device)
 
@@ -110,67 +84,61 @@ if len(batch)<NUM_CHAIN:
     batch = batch.repeat((NUM_CHAIN//len(batch)+1, 1, 1, 1))
 batch = batch[:NUM_CHAIN]
 
-ps_true, phi_true = ps_model.sample_ps(NUM_CHAIN)
-sq_ps_true = torch.sqrt(ps_true).to(device)
-phi_true = phi_true.to(device)
-rphi_true = ps_model.rescale_phi(phi_true).to(device)
+rphi_true = sample_prior(NUM_CHAIN).to(device)
+phi_true = unnormalize_phi(rphi_true, mode=norm_phi_mode)
+ps_true = ps_model(rphi_true).unsqueeze(1)
+sq_ps_true = torch.sqrt(ps_true).to(device).to(torch.float32)
 
 noisy_batch, mean_batch, noise_batch = diffuser.diffmodel.sde.sampling(batch, timesteps, sq_ps_true)
 
 rescaled_batch = diffuser.diffmodel.sde.rescale_preserved_to_additive(noisy_batch, timesteps)
 
-phi = ps_model.sample_phi(NUM_CHAIN).to(device)
-rphi = ps_model.rescale_phi(phi).to(device)
+rphi = sample_prior(NUM_CHAIN).to(device)
+phi = unnormalize_phi(rphi, mode=norm_phi_mode)
 
-progress_bar = tqdm.tqdm(range(NUM_SAMPLES+BURNIN_MCMC))
+progress_bar = tqdm.tqdm(range(NUM_SAMPLES+BURNIN_MCMC + BURNIN_HEURISTIC))
 
-for n in range(NUM_SAMPLES+BURNIN_MCMC):
-    if isinstance(diffuser.diffmodel.sde, ContinuousSDE):
-        if diffuser.diffmodel.sde.beta_schedule == 'cosine':
-            schedule = get_schedule('power_law', t_min = diffuser.diffmodel.sde.tmin, t_max = TIME_STEP.item(), n_iter = 200, power = 1.5)
-            X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule, verbose=False, phi = phi)
-        else:
-            schedule = get_schedule('power_law', t_min = diffuser.diffmodel.sde.tmin, t_max = TIME_STEP.item(), n_iter = 200, power = 2)
-            X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule, verbose=False, phi = phi)
-    else:
-        X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, initial_timestep=TIME_STEP, verbose=False, phi = phi)
+for n in range(NUM_SAMPLES+BURNIN_MCMC+BURNIN_HEURISTIC):
+	if isinstance(diffuser.diffmodel.sde, ContinuousSDE):
+		schedule = get_schedule('power_law', t_min = diffuser.diffmodel.sde.tmin, t_max = TIME_STEP.item(), n_iter = 600, power = 2)
+		X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule.to(device), verbose=False, phi = phi)
+	else:
+		X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, initial_timestep=TIME_STEP, verbose=False, phi = phi)
+	_, mean, _ = diffuser.diffmodel.sde.sampling(X_0, TIME_STEP)
+	epsilon_hat = (rescaled_batch - mean)/diffuser.diffmodel.sde.noise_level(timesteps).reshape(-1, 1, 1, 1)
+	epsilon_hat = epsilon_hat[:, 0, :, :]
 
-    ps = diffuser.diffmodel.ps(phi)
-    sq_ps = torch.sqrt(ps).to(device)
-    _, mean, _ = diffuser.diffmodel.sde.sampling(X_0, TIME_STEP, sq_ps)
-    epsilon_hat = (rescaled_batch - mean)/diffuser.diffmodel.sde.noise_level(timesteps).reshape(-1, 1, 1, 1)
-    log_prob = lambda rphi: log_posterior(rphi, epsilon_hat)
+	log_prob = lambda rphi: log_posterior(rphi, epsilon_hat)
+	def log_prob_grad(rphi):
+		""" Compute the log posterior and its gradient."""
+		rphi.requires_grad_(True)
+		log_prob = log_posterior(rphi, epsilon_hat)
+		grad_log_prob = torch.autograd.grad(log_prob, rphi, grad_outputs=torch.ones_like(log_prob))[0]
+		return log_prob.detach(), grad_log_prob
 
-    def log_prob_grad(rphi):
-        """
-	    Compute the log posterior and its gradient.
-		"""
-        log_prob = log_posterior(rphi, epsilon_hat)
-        grad_log_prob = torch.autograd.grad(log_prob, rphi, grad_outputs=torch.ones_like(log_prob))[0]
-        return log_prob, grad_log_prob
+	rphi = normalize_phi(phi, mode=norm_phi_mode)
+	if n < BURNIN_HEURISTIC:
+		hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad)
+		samples = hmc.sample(rphi, nsamples=1, burnin=100, step_size=1e-6, nleap = 10, epsadapt=100, verbose = False, ret_side_quantities=False)
+		step_size = hmc.step_size
+		inv_mass_matrix = hmc.mass_matrix_inv
+	else:
+		hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad, inv_mass_matrix=inv_mass_matrix)
+		samples = hmc.sample(rphi, nsamples=1, burnin=10, step_size=step_size, nleap = 10, epsadapt=0, verbose = False)
 
-    hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad)
-    kwargs = {'nsamples': 1,
-			'burnin': 10,
-			'step_size':3e-3,
-			'nleap': 5}
-    epsadapt = 0
+	rphi = samples[:,0,:]
+	rphi_list.append(rphi)
+	phi = unnormalize_phi(rphi, mode=norm_phi_mode)
+	phi_list.append(phi)
+	phi.detach()
+	rphi.detach()
+	phi.requires_grad_()
+	phi = phi.to(device)
+	if n > 0 and (n % CKPT_FREQ == 0 or n == NUM_SAMPLES + BURNIN_MCMC - 1):
+		tensor_rphi_list = [rphi.unsqueeze(0) for rphi in rphi_list]
+		tensor_rphi_list = torch.cat(tensor_rphi_list, dim=0)
+		dict_to_save = {'phi_true': phi_true, 'rphi_true': rphi_true, 'tensor_rphi_list': tensor_rphi_list}
+		torch.save(dict_to_save, args.save_path)
+	progress_bar.update(1)
 
-    rphi_0 = sample_prior(NUM_CHAIN).requires_grad_().to(device)
-    rphi_0 = rphi_list[-1].requires_grad_() if len(rphi_list) > 0 else rphi_0
-    sampler = hmc.sample(rphi_0, epsadapt = epsadapt, verbose = False, **kwargs)
-    rphi = sampler.samples[:,-1]
-    rphi_list.append(rphi) 
-    phi = ps_model.unscale_phi(rphi)
-    phi_list.append(phi)
-    phi.detach()
-    phi.requires_grad_()
-    phi = phi.to(device)
-    progress_bar.update(1)
-
-    if n>0 and (n % CKPT_FREQ == 0 or n == NUM_SAMPLES+BURNIN_MCMC-1):
-        tensor_rphi_list = [rphi.unsqueeze(0) for rphi in rphi_list]
-        tensor_rphi_list = torch.cat(tensor_rphi_list, dim=0)
-        dict_to_save = {'phi_true': phi_true, 'rphi_true': rphi_true, 'tensor_rphi_list' : tensor_rphi_list}
-        torch.save(dict_to_save, args.save_path)
 progress_bar.close()

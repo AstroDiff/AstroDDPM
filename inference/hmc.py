@@ -310,7 +310,7 @@ class HMC():
         epsadapt_kernel = DualAveragingStepSize(step_size)
 
         q_list = [] # We save the positions to estimate the inverse mass matrix at half the iterations
-
+        
         for i in tqdm(range((epsadapt)), disable=not verbose):
             q, p, acc, Hs, count = self.step(q, nleap, step_size)
             q_list.append(q)
