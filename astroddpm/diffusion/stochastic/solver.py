@@ -70,6 +70,9 @@ def power_law_schedule(**kwargs):
     if 'power' not in kwargs:
         kwargs['power'] = 1.1
     n_iter = kwargs['n_iter']
+    if type(kwargs['t_min']) == torch.Tensor:
+        assert type(kwargs['t_max']) == torch.Tensor
+        return (torch.linspace(0,1,n_iter)**kwargs['power']).to(kwargs['t_min'].device).reshape(1,-1)* (kwargs['t_max'] - kwargs['t_min']).unsqueeze(-1) + kwargs['t_min'].unsqueeze(-1)
     return torch.linspace(0,1,n_iter)**kwargs['power'] * (kwargs['t_max'] - kwargs['t_min']) + kwargs['t_min']
 
 class EulerMaruyama():
@@ -93,15 +96,15 @@ class EulerMaruyama():
         """
         if reverse_time:
             times = self.schedule
-            times = times.flip(0)
+            times = times.flip(1)
         else:
             times = self.schedule
         x = x_init
 
         progress_bar = tqdm.tqdm(total = len(times)-1, disable=not verbose)
-        for i in range(len(times)-1):
-            dt = times[i+1] - times[i]
-            timesteps = times[i]*torch.ones(x.shape[0],1).to(x.device)
+        for i in range(times.shape[1]-1):
+            dt = (times[:,i+1] - times[:,i]).reshape(-1,1,1,1)
+            timesteps = times[:,i].to(x.device).unsqueeze(1)
             x = x + f(x, timesteps) * dt + gdW(x, timesteps) * torch.sqrt(torch.abs(dt))
             if x.isnan().any():
                 print("Nan encountered at time step {}".format(i))
