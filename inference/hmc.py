@@ -145,13 +145,20 @@ class HMC():
                 L_list, Q_list = [], []
                 mass_matrix_sqrt_list = []
 
-                for m in mat:
+                for i,m in enumerate(mat):
                     assert (m == m.T).all() # Check if symmetric
                     L, Q = torch.linalg.eigh(m)
-                    assert (L > 0).all() # Check if positive definite
-                    L_list.append(L)
-                    Q_list.append(Q)
-                    mass_matrix_sqrt_list.append(Q @ torch.diag(L**-0.5) @ Q.T)
+                    if (L > 0).all(): # Check if positive definite
+                        L_list.append(L)
+                        Q_list.append(Q)
+                        mass_matrix_sqrt_list.append(Q @ torch.diag(L**-0.5) @ Q.T)
+                    else:
+                        m = mat.mean(dim=0)
+                        L, Q = torch.linalg.eigh(m)
+                        L_list.append(L)
+                        Q_list.append(Q)
+                        mass_matrix_sqrt_list.append(Q @ torch.diag(L**-0.5) @ Q.T)
+                        mat[i] = m
                 
                 self.mass_matrix_inv = mat
                 self.mass_matrix_sqrt = torch.stack(mass_matrix_sqrt_list, dim=0)
@@ -313,6 +320,9 @@ class HMC():
         
         for i in tqdm(range((epsadapt)), disable=not verbose):
             q, p, acc, Hs, count = self.step(q, nleap, step_size)
+            q = q.detach()
+            Hs = Hs.detach()
+            
             q_list.append(q)
 
             prob = torch.exp(Hs[...,0] - Hs[...,1])
@@ -324,7 +334,7 @@ class HMC():
                 print("Step size fixed to : ", step_size)
 
             # Estimate the inverse mass matrix
-            if i == 3*epsadapt//2:
+            if i == 3*epsadapt//4:
                 q_list_tensor = torch.stack(q_list, dim=-2)[:, epsadapt//4:, :]
                 assert q_list_tensor.ndim == 3
 
@@ -334,9 +344,8 @@ class HMC():
                 diffs = (q_list_tensor - mean).reshape(B * N, D)
                 prods = torch.bmm(diffs.unsqueeze(-1), diffs.unsqueeze(-2)).reshape(B, N, D, D)
                 bcov = prods.sum(dim=-3) / (N - 1)  # Unbiased estimate
-
-                self.set_inv_mass_matrix(bcov, batch_dim=True)
-
+                self.set_inv_mass_matrix(bcov.detach(), batch_dim=True)
+            step_size.detach()
         return q, step_size
     
     def sample(self, q,
@@ -384,11 +393,14 @@ class HMC():
             self.step_size = step_size
         for i in tqdm(range(nsamples + burnin), disable=not verbose):
             q, p, acc, Hs, count = self.step(q, nleap, step_size)
+            q.detach()
+            Hs.detach()
             accepts_list.append(acc)
             if (skipburn and (i >= burnin)) or not skipburn:
                 samples_list.append(q)
                 Hs_list.append(Hs)
                 counts_list.append(count)
+            
 
         # To torch tensors
         samples_list = torch.stack(samples_list, dim=-2)

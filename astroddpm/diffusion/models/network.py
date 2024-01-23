@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from .configs import complete_config
 
 import numpy as np
 
@@ -328,50 +329,38 @@ class ResUNet(nn.Module):
         h = self.tail(h)
         return h
 
-def get_network(config): ## TODO add more networks, TODO be careful when I will change how ResUNet works!!!
-    if "type" not in config.keys():
-        config["type"] = "ResUNet"
-    if config["type"].lower() == "resunet":
-        if "in_c" not in config.keys():
-            config["in_c"] = 1
-        if "out_c" not in config.keys():
-            config["out_c"] = 1
-        if "first_c" not in config.keys():
-            config["first_c"] = 10
-        if "sizes" not in config.keys():
-            config["sizes"] = [256, 128, 64, 32]
-        if "num_blocks" not in config.keys():
-            config["num_blocks"] = 1
-        if "n_steps" not in config.keys():
-            print("Warning: n_steps not specified, defaulting")
-            config["n_steps"] = 1000
-        if "time_emb_dim" not in config.keys():
-            config["time_emb_dim"] = 100
-        if "dropout" not in config.keys():
-            print("Warning: dropout not specified, defaulting")
-            config["dropout"] = 0
-        if "attention" not in config.keys():
-            print("Warning: attention not specified, defaulting")
-            config["attention"] = []
-        if "normalisation" not in config.keys():
-            print("Warning: normalisation not specified, defaulting")
-            config["normalisation"] = "default"
-        if "padding_mode" not in config.keys():
-            config["padding_mode"] = "circular"
-        if "eps_norm" not in config.keys():
-            config["eps_norm"] = 1e-5
-        if "skiprescale" not in config.keys():
-            config["skiprescale"] = True
-        if "discretization" not in config.keys():
-            config["discretization"] = "discrete"
-        if "embedding_mode" not in config.keys():
-            config["embedding_mode"] = None
-        if "has_phi" not in config.keys():
-            config["has_phi"] = False
-        if "phi_embed_dim" not in config.keys():
-            config["phi_embed_dim"] = 100
-        if "phi_shape" not in config.keys():
-            config["phi_shape"] = None
-        return ResUNet(in_c=config["in_c"], out_c=config["out_c"], first_c=config["first_c"], sizes=config["sizes"], num_blocks=config["num_blocks"], n_steps=config["n_steps"], time_emb_dim=config["time_emb_dim"], dropout=config["dropout"], attention=config["attention"], normalisation=config["normalisation"], padding_mode=config["padding_mode"], eps_norm=config["eps_norm"], skiprescale=config["skiprescale"], discretization=config["discretization"], embedding_mode=config["embedding_mode"], has_phi=config["has_phi"], phi_embed_dim=config["phi_embed_dim"], phi_shape=config["phi_shape"])
+class FFResUNet(nn.Module):
+    def __init__(self, in_c=1, out_c=1, first_c=10, sizes=[256, 128, 64, 32], num_blocks=1, n_steps=1000, time_emb_dim=100, 
+        dropout=0, attention=[], normalisation="default", padding_mode="circular", eps_norm=1e-5, skiprescale=False, discretization = "discrete", embedding_mode = None,
+        has_phi = False, phi_shape = 1, phi_embed_dim=100, n_ff_min = 6, n_ff_max = 8):
+        super(FFResUNet, self).__init__()
+        self.in_c = in_c
+        self.sizes = sizes
+        self.in_channels = in_c * (1+2*(n_ff_max-n_ff_min+1))
+        self.n_ff_min = n_ff_min
+        self.n_ff_max = n_ff_max
+        self.powers = 2**torch.arange(self.n_ff_min, self.n_ff_max+1)
+
+        self.resunet = ResUNet(in_c=self.in_channels, out_c=out_c, first_c=first_c, sizes=sizes, num_blocks=num_blocks, n_steps=n_steps, time_emb_dim=time_emb_dim, dropout=dropout, attention=attention, normalisation=normalisation, padding_mode=padding_mode, eps_norm=eps_norm, skiprescale=skiprescale, discretization=discretization, embedding_mode=embedding_mode, has_phi=has_phi, phi_shape=phi_shape, phi_embed_dim=phi_embed_dim)
+    
+        self.config = self.resunet.config ## TODO change with a config method
+
+    def forward(self, x, t, phi = None):
+        
+        x_ff = [self.powers[i]*x for i in range(self.n_ff_max-self.n_ff_min+1)]
+        x_ff = torch.cat(x_ff, dim=1)
+        x = torch.cat([x, torch.sin(x_ff), torch.cos(x_ff)], dim=1)
+        return self.resunet(x, t, phi)
+        
+
+
+def get_network(config):
+    config = complete_config(config)
+    print(config)
+    network_type = config.pop('type').lower()
+    if network_type == "resunet":
+        return ResUNet(**config)
+    elif network_type == "ffresunet":
+        return FFResUNet(**config)
     else:
         raise NotImplementedError(f"Network type {config['type']} not implemented")

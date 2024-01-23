@@ -286,7 +286,7 @@ class ContinuousSBM(DiffusionModel):
         else:
             self.has_phi = False
 
-        ## TODO add : option for uneven timesteps sampling when computing the loss
+        ## TODO add : option for uneven timesteps sampling when computing the loss -> DONE by SDE
 
     def loss(self, batch):
         timesteps = (torch.rand(batch.shape[0],1).to(device) * (self.tmax - self.tmin) + self.tmin)
@@ -309,15 +309,14 @@ class ContinuousSBM(DiffusionModel):
         
     def generate_image(self, sample_size, sample=None, initial_timestep=None, verbose=False, schedule = None, solver = None, phi = None, return_phi = False):
         self.eval()
-
         if schedule is None:
             if initial_timestep is None:
-                t_min = self.sde.tmin
-                t_max = self.sde.tmax
+                t_min = torch.tensor([self.sde.tmin]).repeat(sample_size).to(device)
+                t_max = torch.tensor([self.sde.tmax]).repeat(sample_size).to(device)
             else:
-                t_min = self.sde.tmin
-                t_max = initial_timestep
-            schedule = torch.linspace(t_min, t_max, 1000).to(device)
+                t_min = torch.tensor([self.sde.tmin]).repeat(sample_size).to(device)
+                t_max = torch.tensor([initial_timestep]).repeat(sample_size).to(device)
+            schedule = solv.get_schedule('linear', t_min = t_min, t_max = t_max, n_iter = 1000)
         
         if solver is None:
             solver = solv.EulerMaruyama(schedule)

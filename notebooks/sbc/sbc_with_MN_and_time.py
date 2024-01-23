@@ -95,7 +95,7 @@ def log_posterior(param, x):
 
 phi_min_norm, phi_max_norm = get_phi_bounds(device=device)
 phi_min_norm, phi_max_norm = normalize_phi(phi_min_norm, mode=norm_phi_mode), normalize_phi(phi_max_norm, mode=norm_phi_mode)
-sigma_min, sigma_max = torch.tensor([1e-3]), torch.tensor([1.]) ## Sigma bounds, same as in the prior!!
+sigma_min, sigma_max = torch.tensor([NOISE_LEVEL_MIN]).to(device), torch.tensor([NOISE_LEVEL_MAX]).to(device)
 phi_min_norm = torch.concatenate((phi_min_norm, sigma_min.to(device)))
 phi_max_norm = torch.concatenate((phi_max_norm, sigma_max.to(device)))
 
@@ -151,20 +151,23 @@ with torch.no_grad():
 	rphi = (estimated_param[:, :2]+1)/2
 	log_sigma = estimated_param[:, 2:]
 	sigma = torch.exp(log_sigma)
-	timesteps = diffuser.diffmodel.sde.get_closest_timestep(sigma)
+	timesteps = diffuser.diffmodel.sde.get_closest_timestep(sigma)[:,0]
 	phi = unnormalize_phi(rphi, mode=norm_phi_mode).to(device)
 	phi_list.append(phi)
 	rphi_list.append(rphi)
 	sigma_list.append(sigma)
 
+moment_network.to('cpu')
+
 timesteps_min = torch.tensor([diffuser.diffmodel.sde.tmin]).to(device).repeat(NUM_CHAIN)
 progress_bar = tqdm.tqdm(range(NUM_SAMPLES+BURNIN_MCMC + BURNIN_HEURISTIC))
 for n in range(NUM_SAMPLES+BURNIN_MCMC+BURNIN_HEURISTIC):
-	schedule = get_schedule('power_law', t_min = timesteps_min, t_max = timesteps, n_iter = 600, power = 2)
-	X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule.to(device), verbose=False, phi = phi)
+	with torch.no_grad():
+		schedule = get_schedule('power_law', t_min = timesteps_min, t_max = timesteps, n_iter = 600, power = 2)
+		X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule.to(device), verbose=False, phi = phi)
 
-	epsilon_hat = (rescaled_batch - X_0)
-	epsilon_hat = epsilon_hat[:, 0, :, :]
+		epsilon_hat = (rescaled_batch - X_0)
+		epsilon_hat = epsilon_hat[:, 0, :, :]
 
 	log_prob = lambda param: log_posterior(param, epsilon_hat)
 	def log_prob_grad(param):
@@ -180,12 +183,13 @@ for n in range(NUM_SAMPLES+BURNIN_MCMC+BURNIN_HEURISTIC):
 		hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad)
 		hmc.set_collision_fn(collision_manager)
 
-		samples = hmc.sample(param, nsamples=1, burnin=10, step_size=1e-6, nleap = (5,15), epsadapt=200, verbose = False, ret_side_quantities=False)
+		samples = hmc.sample(param, nsamples=1, burnin=10, step_size=1e-6, nleap = (5,15), epsadapt=300, verbose = False, ret_side_quantities=False)
 		step_size = hmc.step_size
 		inv_mass_matrix = hmc.mass_matrix_inv
 	else:
-		hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad, inv_mass_matrix=inv_mass_matrix)
+		hmc = HMC(log_prob, log_prob_and_grad=log_prob_grad)
 		hmc.set_collision_fn(collision_manager)
+		hmc.set_inv_mass_matrix(inv_mass_matrix, batch_dim=True)
 		samples = hmc.sample(param, nsamples=1, burnin=10, step_size=step_size, nleap = (5,15), epsadapt=0, verbose = False)
 	
 	if (samples[:,0,:] - param == 0).all():

@@ -45,6 +45,9 @@ def linear_schedule(**kwargs):
         kwargs['t_max'] = 1
     if 'n_iter' not in kwargs:
         kwargs['n_iter'] = 1000
+    if type(kwargs['t_min']) == torch.Tensor:
+        assert type(kwargs['t_max']) == torch.Tensor
+        return torch.linspace(0,1, kwargs['n_iter']).to(kwargs['t_min'].device).reshape(1,-1) * (kwargs['t_max'] - kwargs['t_min']).unsqueeze(-1) + kwargs['t_min'].unsqueeze(-1)
     return torch.linspace(kwargs['t_min'], kwargs['t_max'], kwargs['n_iter'])
 
 def power_law_schedule(**kwargs):

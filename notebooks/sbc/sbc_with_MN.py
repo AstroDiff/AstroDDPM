@@ -152,9 +152,10 @@ with torch.no_grad():
 #phi = unnormalize_phi(rphi, mode=norm_phi_mode)
 
 progress_bar = tqdm.tqdm(range(NUM_SAMPLES+BURNIN_MCMC + BURNIN_HEURISTIC))
+timesteps_min = torch.tensor([diffuser.diffmodel.sde.tmin]).to(device).repeat(NUM_CHAIN)
 for n in range(NUM_SAMPLES+BURNIN_MCMC+BURNIN_HEURISTIC):
 	if isinstance(diffuser.diffmodel.sde, ContinuousSDE):
-		schedule = get_schedule('power_law', t_min = diffuser.diffmodel.sde.tmin, t_max = TIME_STEP.item(), n_iter = 600, power = 2)
+		schedule = get_schedule('power_law', t_min = timesteps_min, t_max = timesteps, n_iter = 600, power = 2)
 		X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, schedule = schedule.to(device), verbose=False, phi = phi)
 	else:
 		X_0 = diffuser.diffmodel.generate_image(NUM_CHAIN, sample = noisy_batch, initial_timestep=TIME_STEP, verbose=False, phi = phi)
