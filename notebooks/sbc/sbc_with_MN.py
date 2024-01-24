@@ -49,16 +49,20 @@ os.makedirs(save_path_dir, exist_ok=True)
 norm_phi_mode = 'compact'               # Normalization mode for phi among ['compact', 'inf', None]
 phi_min, phi_max = get_phi_bounds()     # Bounds on phi (unnormalized)
 
+config = config_from_id(MODEL_ID)
+if 'FFResUNet' in MODEL_ID:
+    print('FFResUNet')
+    config['diffusion_model']['network']['type']='FFResUNet'
+    config['diffusion_model']['network']['in_c']=1
 placeholder_dm = DiscreteSBM(DiscreteVPSDE(1000), ResUNet())
 diffuser = Diffuser(placeholder_dm)
-diffuser.load(config=config_from_id(MODEL_ID), also_ckpt=True, for_training=True)
+diffuser.load(config=config, also_ckpt=True, for_training=True)
+ps_model = CMBPS(norm_input_phi=norm_phi_mode).to(device)   # Power spectrum model  
 
 TIME_STEP = diffuser.diffmodel.sde.get_closest_timestep(torch.tensor(NOISE_LEVEL))
 print(f"Time step chosen for noise level {NOISE_LEVEL}: {TIME_STEP}")
 
 TIME_STEP = TIME_STEP.to(device)
-
-ps_model = CMBPS(norm_input_phi=norm_phi_mode).to(device)
 
 ### Loading the moment model
 ckpt_moment_model = torch.load(os.path.join('/mnt/home/dheurtel/ceph/02_checkpoints/', MOMENT_MODEL_ID, 'ckpt.pt'))

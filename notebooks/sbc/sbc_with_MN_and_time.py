@@ -52,11 +52,15 @@ os.makedirs(save_path_dir, exist_ok=True)
 norm_phi_mode = 'compact'               # Normalization mode for phi among ['compact', 'inf', None]
 phi_min, phi_max = get_phi_bounds()     # Bounds on phi (unnormalized)
 
+config = config_from_id(MODEL_ID)
+if 'FFResUNet' in MODEL_ID:
+    print('FFResUNet')
+    config['diffusion_model']['network']['type']='FFResUNet'
+    config['diffusion_model']['network']['in_c']=1
 placeholder_dm = DiscreteSBM(DiscreteVPSDE(1000), ResUNet())
 diffuser = Diffuser(placeholder_dm)
-diffuser.load(config=config_from_id(MODEL_ID), also_ckpt=True, for_training=True)
-
-ps_model = CMBPS(norm_input_phi=norm_phi_mode).to(device)
+diffuser.load(config=config, also_ckpt=True, for_training=True)
+ps_model = CMBPS(norm_input_phi=norm_phi_mode).to(device)   # Power spectrum model  
 
 ### Loading the moment model
 ############################################################################################################
@@ -112,7 +116,11 @@ def collision_manager(q, p, p_nxt):
 
     return p_ret
 
-
+def boundary_projection(rphi, sigma, eps=1e-3):
+    rphi[:,0] = torch.clamp(rphi[:,0], phi_min_norm[0] + eps, phi_max_norm[0] - eps)
+    rphi[:,1] = torch.clamp(rphi[:,1], phi_min_norm[1] + eps, phi_max_norm[1] - eps)
+    sigma = torch.clamp(sigma, sigma_min.to(device) + eps, sigma_max.to(device) - eps)
+    return rphi, sigma
 ## Building the artificial superposition of CMB and Dust
 
 batch = next(iter(diffuser.test_dataloader))
@@ -151,6 +159,7 @@ with torch.no_grad():
 	rphi = (estimated_param[:, :2]+1)/2
 	log_sigma = estimated_param[:, 2:]
 	sigma = torch.exp(log_sigma)
+	rphi, sigma = boundary_projection(rphi, sigma)
 	timesteps = diffuser.diffmodel.sde.get_closest_timestep(sigma)[:,0]
 	phi = unnormalize_phi(rphi, mode=norm_phi_mode).to(device)
 	phi_list.append(phi)
