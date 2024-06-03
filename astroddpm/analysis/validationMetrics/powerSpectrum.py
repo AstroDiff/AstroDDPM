@@ -77,7 +77,6 @@ def power_spectrum_2d(data, norm=None, use_gpu = True):
                 res[:,j,i] = torch.conj(stacked[idx*B:(idx+1)*B])
         return res
 
-
 def _spectral_iso2d(data_sp, bins=None, sampling=1.0, return_counts=False, use_gpu = True):
     '''
     Given a B x C x H x W or a B x C x C x H x W tensor, compute the isotropic power spectrum of each image (only over the B dimension)
@@ -422,7 +421,7 @@ def plot_sets_power_spectrum_iso2d(data_list, bins = torch.linspace(0, np.pi, 10
     else:
         plt.close(fig)
 
-    _, _ = plot_ps2d(bins, mean_list, labels=labels, show=True)
+    _, _ = plot_ps2d(bins, mean_list, labels=labels, show=True, save_name=save_name.split('.')[0] + '_superpos' + save_name.split('.')[1])
  
     return mean_list, std_list, bins_centers, labels
 
